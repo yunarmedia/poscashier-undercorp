@@ -181,7 +181,7 @@
     <div id="toastBox"></div>
     <div id="printReceiptArea" style="display: none;"></div>
 
-    <!-- NAVIGATION SIDEBAR (LOGO APP TETAP UNDERCORP) -->
+    <!-- NAVIGATION SIDEBAR -->
     <div class="sidebar">
         <div class="brand">
             <div class="brand-logo-text"><span class="under">UNDER</span><span class="corp">CORP</span></div>
@@ -601,6 +601,7 @@
             return new Date().toLocaleDateString('id-ID');
         }
 
+        // Fungsi Simpan Setting/Global
         function syncToCloud(key, dataObj) {
             localStorage.setItem('pos_' + key, JSON.stringify(dataObj)); 
             db.ref('pos_data/' + key).set(dataObj).catch(err => {
@@ -608,14 +609,20 @@
             });
         }
 
+        // ============================================================================
+        // 3. FUNGSI SINKRONISASI ANTI-BENTROK (ATOMIC WRITES)
+        // ============================================================================
         function fetchPosDataFromFirebase() {
             document.getElementById('syncDataStatus').innerText = "🔄 Syncing...";
             db.ref('pos_data').on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data) {
-                    let newOrders = data.orders || [];
+                    let newOrders = data.orders ? Object.values(data.orders).filter(Boolean) : [];
                     orders = newOrders;
-                    expenses = data.expenses || [];
+                    
+                    let newExpenses = data.expenses ? Object.values(data.expenses).filter(Boolean) : [];
+                    expenses = newExpenses;
+
                     if (data.pettyCash !== undefined) pettyCash = data.pettyCash;
                     if (data.staffList) staffList = data.staffList;
                     
@@ -733,12 +740,14 @@
         }
 
         function renderStaffList() {
-            let tbody = document.getElementById('staffTableBody'); tbody.innerHTML = ''; let has = false;
+            let tbody = document.getElementById('staffTableBody'); 
+            let html = ''; let has = false;
             for (let role in staffList) {
                 if(staffList[role] && staffList[role].length > 0) has = true;
-                if(staffList[role]) staffList[role].forEach(name => { tbody.innerHTML += `<tr><td style="font-weight:700;">${name}</td><td>${role}</td><td><button class="btn btn-outline" style="padding:4px; font-size:11px;" onclick="deleteStaff('${role}', '${name}')">Hapus</button></td></tr>`; });
+                if(staffList[role]) staffList[role].forEach(name => { html += `<tr><td style="font-weight:700;">${name}</td><td>${role}</td><td><button class="btn btn-outline" style="padding:4px; font-size:11px;" onclick="deleteStaff('${role}', '${name}')">Hapus</button></td></tr>`; });
             }
-            if (!has) tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;">Kosong.</td></tr>`;
+            if (!has) html = `<tr><td colspan="3" style="text-align:center;">Kosong.</td></tr>`;
+            tbody.innerHTML = html;
             updateCartUI(); 
         }
         function addStaff() {
@@ -770,15 +779,18 @@
         }
 
         function renderInventory() {
-            let tbody = document.getElementById('inventoryTableBody'); tbody.innerHTML = '';
+            let tbody = document.getElementById('inventoryTableBody'); 
             let kw = document.getElementById('searchInventory') ? document.getElementById('searchInventory').value.toLowerCase() : "";
             let fp = kw ? products.filter(p => p.name.toLowerCase().includes(kw)) : products;
 
             if (fp.length === 0) { tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Tidak ada menu.</td></tr>`; return; }
+            
+            let html = '';
             fp.forEach(p => {
                 let statusBadge = p.tersedia !== false ? '<span style="color:var(--success); font-weight:800;">Tersedia</span>' : '<span style="color:var(--danger); font-weight:800;">Habis</span>';
-                tbody.innerHTML += `<tr><td style="font-weight: 800;">${p.name}</td><td>${p.category}</td><td style="color: var(--primary);">${formatRp(p.price)}</td><td>${statusBadge}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="editProduct('${p.id}')">Edit</button> <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteProduct('${p.id}')">Hapus</button></td></tr>`;
+                html += `<tr><td style="font-weight: 800;">${p.name}</td><td>${p.category}</td><td style="color: var(--primary);">${formatRp(p.price)}</td><td>${statusBadge}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="editProduct('${p.id}')">Edit</button> <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteProduct('${p.id}')">Hapus</button></td></tr>`;
             });
+            tbody.innerHTML = html;
         }
 
         async function saveProduct() {
@@ -805,17 +817,29 @@
             if(!name || !amount) { showToast("Isi data pengeluaran", "error"); return; }
             
             let todayDate = new Date().toLocaleDateString('id-ID'); 
-            expenses.push({ id: Date.now(), name: name, amount: parseInt(amount), date: todayDate }); 
+            let nE = { id: Date.now(), name: name, amount: parseInt(amount), date: todayDate };
+            expenses.push(nE); 
             
-            syncToCloud('expenses', expenses);
+            // INJEKSI CLOUD
+            localStorage.setItem('pos_expenses', JSON.stringify(expenses));
+            db.ref('pos_data/expenses/' + nE.id).set(nE);
+            
             document.getElementById('expenseName').value = ""; document.getElementById('expenseAmount').value = ""; 
             renderExpenses(); renderRevenue(); showToast("Pengeluaran dicatat", "success");
         }
         
-        function deleteExpense(id) { if(confirm("Hapus catatan ini?")) { expenses = expenses.filter(e => e.id !== id); syncToCloud('expenses', expenses); renderExpenses(); renderRevenue(); showToast("Dihapus", "success"); } }
+        function deleteExpense(id) { 
+            if(confirm("Hapus catatan ini?")) { 
+                expenses = expenses.filter(e => e.id !== id); 
+                // HAPUS DARI CLOUD
+                localStorage.setItem('pos_expenses', JSON.stringify(expenses));
+                db.ref('pos_data/expenses/' + id).remove();
+                renderExpenses(); renderRevenue(); showToast("Dihapus", "success"); 
+            } 
+        }
         
         function renderExpenses() {
-            let tbody = document.getElementById('expenseTableBody'); tbody.innerHTML = ''; let total = 0;
+            let tbody = document.getElementById('expenseTableBody'); let total = 0;
             let targetDate = getSelectedDate(); 
             
             if(!expenses || expenses.length===0) { 
@@ -826,10 +850,12 @@
                 if (targetExpenses.length === 0) {
                     tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;">Belum ada pengeluaran di tanggal ini.</td></tr>`;
                 } else {
+                    let html = '';
                     targetExpenses.forEach(e => { 
                         total += e.amount; 
-                        tbody.innerHTML += `<tr><td style="font-weight:700;">${e.name}</td><td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px; color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button></td></tr>`; 
+                        html += `<tr><td style="font-weight:700;">${e.name}</td><td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px; color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button></td></tr>`; 
                     });
+                    tbody.innerHTML = html;
                 }
             }
             document.getElementById('expenseTotal').innerText = formatRp(total);
@@ -937,7 +963,7 @@
             document.body.removeChild(link); 
         }
 
-        // FUNGSI SHARE NATIVE KE WHATSAPP (Via Web Share API)
+        // FUNGSI SHARE NATIVE KE WHATSAPP 
         async function shareExcelToWA() { 
             const targetDate = getSelectedDate();
             const dateStr = targetDate.replace(/\//g, '-');
@@ -954,7 +980,7 @@
                         text: textReport
                     });
                     showToast("Membuka menu Share...", "info");
-                    return; // Jika sukses lewat menu native, berhenti di sini
+                    return; 
                 } catch (error) {
                     console.log("Share dibatalkan atau gagal:", error);
                 }
@@ -962,7 +988,6 @@
                 showToast("Sistem ini butuh bantuan manual.", "warning");
             }
 
-            // CARA CADANGAN JIKA SHARE NATIVE GAGAL (Kirim teks, lalu download otomatis)
             downloadExcel();
             setTimeout(() => {
                 let encodedText = encodeURIComponent(textReport);
@@ -1025,15 +1050,19 @@
         function renderPOS(filter = currentPosFilter) {
             currentPosFilter = filter; const catContainer = document.getElementById('categoryFilters'); catContainer.innerHTML = `<button class="tab-btn ${filter==='Semua'?'active':''}" onclick="renderPOS('Semua')">Semua</button>`;
             [...new Set(products.map(p => p.category))].sort().forEach(c => { catContainer.innerHTML += `<button class="tab-btn ${filter===c?'active':''}" onclick="renderPOS('${c}')">${c}</button>`; });
-            const grid = document.getElementById('productGrid'); grid.innerHTML = '';
+            const grid = document.getElementById('productGrid'); 
             let filtered = filter === 'Semua' ? products : products.filter(p => p.category === filter);
             let kw = document.getElementById('searchPosMenu') ? document.getElementById('searchPosMenu').value.toLowerCase() : "";
             if (kw) filtered = filtered.filter(p => p.name.toLowerCase().includes(kw));
-            if(filtered.length === 0) grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">Menu tidak ditemukan.</div>';
+            if(filtered.length === 0) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">Menu tidak ditemukan.</div>'; return; }
+            
+            let html = '';
             filtered.forEach(p => {
-                if(p.tersedia === false) grid.innerHTML += `<div class="product-card habis"><div class="product-name">${p.name} <span style="color:red; font-size:11px;"><br>(HABIS)</span></div><div class="product-price">${formatRp(p.price)}</div></div>`;
-                else grid.innerHTML += `<div class="product-card" onclick="addToCart('${p.id}')"><div class="product-name">${p.name}</div><div class="product-price">${formatRp(p.price)}</div></div>`;
-            }); updateCartUI();
+                if(p.tersedia === false) html += `<div class="product-card habis"><div class="product-name">${p.name} <span style="color:red; font-size:11px;"><br>(HABIS)</span></div><div class="product-price">${formatRp(p.price)}</div></div>`;
+                else html += `<div class="product-card" onclick="addToCart('${p.id}')"><div class="product-name">${p.name}</div><div class="product-price">${formatRp(p.price)}</div></div>`;
+            }); 
+            grid.innerHTML = html;
+            updateCartUI();
         }
 
         function addToCart(productId) {
@@ -1044,16 +1073,17 @@
         function updateCartUI() {
             let container = document.getElementById('cartItems'); 
             let subtotal = 0; 
-            container.innerHTML = '';
             
             document.getElementById('cartTitle').innerText = editingOrderId ? `Mengedit: ${editingOrderId}` : 'Pesanan Baru';
             
+            let html = '';
             cart.forEach((item, index) => {
                 subtotal += item.price * item.qty; 
                 let staffOpts = `<option value="">- Petugas -</option>`;
                 if(staffList[item.reqStaff]) staffList[item.reqStaff].forEach(s => { staffOpts += `<option value="${s}" ${item.assignedTo===s?'selected':''}>${s}</option>`; });
-                container.innerHTML += `<div class="cart-item"><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><strong style="font-size:13px;">${item.name}</strong><strong style="color:var(--primary);">${formatRp(item.price * item.qty)}</strong></div><input type="text" class="cart-item-note" placeholder="Catatan" value="${item.note||""}" onchange="cart[${index}].note = this.value"><div style="display:flex; justify-content:space-between;"><div class="qty-control"><button class="qty-btn" onclick="cart[${index}].qty--; if(cart[${index}].qty<=0)cart.splice(${index},1); updateCartUI();">-</button><span style="font-weight:900; width:15px; text-align:center;">${item.qty}</span><button class="qty-btn" onclick="cart[${index}].qty++; updateCartUI();">+</button></div><select onchange="cart[${index}].assignedTo = this.value" style="padding:6px; border-radius:6px; font-size:11px;">${staffOpts}</select></div></div>`;
+                html += `<div class="cart-item"><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><strong style="font-size:13px;">${item.name}</strong><strong style="color:var(--primary);">${formatRp(item.price * item.qty)}</strong></div><input type="text" class="cart-item-note" placeholder="Catatan" value="${item.note||""}" onchange="cart[${index}].note = this.value"><div style="display:flex; justify-content:space-between;"><div class="qty-control"><button class="qty-btn" onclick="cart[${index}].qty--; if(cart[${index}].qty<=0)cart.splice(${index},1); updateCartUI();">-</button><span style="font-weight:900; width:15px; text-align:center;">${item.qty}</span><button class="qty-btn" onclick="cart[${index}].qty++; updateCartUI();">+</button></div><select onchange="cart[${index}].assignedTo = this.value" style="padding:6px; border-radius:6px; font-size:11px;">${staffOpts}</select></div></div>`;
             });
+            container.innerHTML = html;
             
             document.getElementById('cartSubtotal').innerText = formatRp(subtotal);
             
@@ -1082,11 +1112,15 @@
         function filterHistory(status, btn=null) {
             window.currentHistoryFilter = status;
             if(btn) { document.querySelectorAll('#page-history .tab-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
-            let tbody = document.getElementById('historyTableBody'); tbody.innerHTML = '';
+            let tbody = document.getElementById('historyTableBody'); 
             
             if(orders && orders.length > 0) {
+                // Limit ke 150 transaksi terbaru untuk menghindari lag pada DOM
                 let filtered = [...orders].reverse().filter(o => o.status === status);
-                filtered.forEach(o => {
+                let displayOrders = filtered.slice(0, 150);
+                let html = '';
+                
+                displayOrders.forEach(o => {
                     let badge = '';
                     if (o.status === 'pending') badge = '<span style="color:var(--warning)">🟠 Gantung</span>';
                     else if (o.status === 'batal') badge = '<span style="color:var(--danger)">❌ Dibatalkan</span>';
@@ -1117,15 +1151,25 @@
                         itemsList = "-";
                     }
 
-                    tbody.innerHTML += `<tr><td>${o.id}</td><td>${stempel}</td><td>${o.customer}</td><td style="font-size:11px; color:var(--text-main); font-weight:600; line-height:1.4;">${itemsList}</td><td style="font-weight:800;">${badge}</td><td style="font-weight:900; color:var(--primary);">${formatRp(o.total)}</td><td>${act}</td></tr>`;
+                    html += `<tr><td>${o.id}</td><td>${stempel}</td><td>${o.customer}</td><td style="font-size:11px; color:var(--text-main); font-weight:600; line-height:1.4;">${itemsList}</td><td style="font-weight:800;">${badge}</td><td style="font-weight:900; color:var(--primary);">${formatRp(o.total)}</td><td>${act}</td></tr>`;
                 });
-            } else tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Belum ada riwayat.</td></tr>`;
+                
+                if (filtered.length > 150) {
+                    html += `<tr><td colspan="7" style="text-align:center; padding:15px; color:var(--text-muted); font-size:11px;">Menampilkan 150 transaksi terbaru untuk menjaga performa aplikasi. Total data di kategori ini: ${filtered.length}</td></tr>`;
+                }
+                tbody.innerHTML = html;
+            } else {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Belum ada riwayat.</td></tr>`;
+            }
         }
 
         function deleteOrderPermanently(id) {
             if(confirm("Yakin ingin menghapus pesanan ini secara PERMANEN dari database?")) {
                 orders = orders.filter(o => o.id !== id);
-                syncToCloud('orders', orders);
+                // HAPUS INJEKSI
+                localStorage.setItem('pos_orders', JSON.stringify(orders));
+                db.ref('pos_data/orders/' + id).remove();
+                
                 showToast("Pesanan dihapus permanen!", "success");
                 renderRevenue();
                 filterHistory(window.currentHistoryFilter);
@@ -1175,18 +1219,20 @@
         function cancelOrder(id, currentStatus) {
             const code = prompt("Masukkan Kode Rahasia untuk membatalkan pesanan:");
             if (code === "2006UDC") { 
-                if (confirm("Yakin ingin membatalkan? Transaksi ini akan ditarik dari omzet.")) { 
-                    let idx = orders.findIndex(o => o.id === id && o.status === currentStatus);
-                    if(idx === -1) idx = orders.findIndex(o => o.id === id); 
+                let idx = orders.findIndex(o => o.id === id && o.status === currentStatus);
+                if(idx === -1) idx = orders.findIndex(o => o.id === id); 
 
-                    if(idx !== -1) {
-                        orders[idx].status = 'batal';
-                        syncToCloud('orders', orders); 
-                        showToast("Pesanan dibatalkan!", "success"); 
-                        renderRevenue();
-                        filterHistory(currentStatus); 
-                    }
-                } 
+                if(idx !== -1) {
+                    orders[idx].status = 'batal';
+                    
+                    // UPDATE INJEKSI
+                    localStorage.setItem('pos_orders', JSON.stringify(orders));
+                    db.ref('pos_data/orders/' + orders[idx].id).update({ status: 'batal' });
+                    
+                    showToast("Pesanan dibatalkan!", "success"); 
+                    renderRevenue();
+                    filterHistory(currentStatus); 
+                }
             } 
             else if (code !== null) showToast("Kode rahasia salah!", "error");
         }
@@ -1214,6 +1260,11 @@
                     orders[idx].customer = cust; 
                     orders[idx].status = status; 
                     orders[idx].payment = paymentMethod; 
+                    
+                    // INJEKSI UPDATE CLOUD
+                    localStorage.setItem('pos_orders', JSON.stringify(orders));
+                    db.ref('pos_data/orders/' + orders[idx].id).set(orders[idx]);
+
                     if(status === 'selesai') executePrint(orders[idx]); 
                 } 
             } else { 
@@ -1232,10 +1283,14 @@
                     items: [...cart] 
                 }; 
                 orders.push(nO); 
+                
+                // INJEKSI PUSH CLOUD
+                localStorage.setItem('pos_orders', JSON.stringify(orders));
+                db.ref('pos_data/orders/' + uniqueId).set(nO);
+
                 if(status === 'selesai' || document.getElementById('btAutoPrint').checked) executePrint(nO); 
             }
             
-            syncToCloud('orders', orders); 
             cart = []; 
             document.getElementById('orderNote').value = ""; 
             document.getElementById('discountValue').value = ""; 
