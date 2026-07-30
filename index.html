@@ -97,7 +97,7 @@
         /* TABLES */
         .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; min-width: 500px; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 12px;}
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 12px; vertical-align: middle;}
         th { background-color: #f1f4f8; font-weight: 800; text-transform: uppercase; font-size: 11px; }
 
         .tabs { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 5px; flex-shrink: 0; -webkit-overflow-scrolling: touch;}
@@ -181,7 +181,7 @@
     <div id="toastBox"></div>
     <div id="printReceiptArea" style="display: none;"></div>
 
-    <!-- NAVIGATION SIDEBAR -->
+    <!-- NAVIGATION SIDEBAR (LOGO APP TETAP UNDERCORP) -->
     <div class="sidebar">
         <div class="brand">
             <div class="brand-logo-text"><span class="under">UNDER</span><span class="corp">CORP</span></div>
@@ -329,19 +329,68 @@
             </div>
         </div>
 
-        <!-- 3. PORTAL PENGELUARAN -->
+        <!-- 3. PORTAL PENGELUARAN (DIPERBARUI) -->
         <div id="page-expenses" class="page">
-            <h2>Pencatatan Pengeluaran</h2>
+            <h2>Pencatatan Pengeluaran & Kasbon</h2>
             <div class="split-layout">
                 <div class="card">
-                    <div class="form-group"><label>Nama Pengeluaran</label><input type="text" id="expenseName"></div>
-                    <div class="form-group"><label>Nominal (Rp)</label><input type="number" id="expenseAmount"></div>
-                    <button class="btn btn-danger" style="width: 100%;" onclick="addExpense()">TAMBAH PENGELUARAN</button>
+                    <div class="form-group"><label>Keterangan / Nama Karyawan Kasbon</label><input type="text" id="expenseName" placeholder="Contoh: Beli Es Batu / KASBON Budi"></div>
+                    
+                    <div class="form-group"><label>Kategori Pengeluaran</label>
+                        <select id="expenseCategory">
+                            <option value="HPP">HPP (Bahan Baku / Stok)</option>
+                            <option value="Beban Dapur dan Umum">Beban Dapur & Umum</option>
+                            <option value="Beban Listrik/Air/Telpon">Beban Listrik/Air/Telpon</option>
+                            <option value="Beban Alat Tulis Kantor">Beban Alat Tulis Kantor</option>
+                            <option value="Beban Gaji/Upah/Tunjangan">Beban Gaji/Upah/Tunjangan</option>
+                            <option value="Beban Iklan/Promosi">Beban Iklan/Promosi</option>
+                            <option value="Beban Sewa">Beban Sewa</option>
+                            <option value="Kasbon/Piutang">Kasbon / Piutang Karyawan</option>
+                            <option value="Lainnya">Lainnya</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group"><label>Opsi Pembayaran (Sumber Dana)</label>
+                        <select id="expensePayment">
+                            <option value="Kas Tunai">Kas Tunai (Laci Kasir)</option>
+                            <option value="Transfer Bank">Transfer / Bank</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group"><label>Nominal (Rp)</label><input type="number" id="expenseAmount" placeholder="Contoh: 50000"></div>
+                    
+                    <div class="form-group" style="background:#f0f2f5; padding:10px; border-radius:8px; border:1px dashed var(--border-color);">
+                        <label>📸 Upload Foto Struk/Nota (Opsional)</label>
+                        <input type="file" id="expensePhotoInput" accept="image/*" onchange="compressExpensePhoto(this)" style="background:white; padding:6px; font-size: 11px;">
+                        <input type="hidden" id="expensePhotoBase64">
+                        <div style="text-align:center; margin-top:10px;">
+                            <img id="expensePhotoPreview" style="max-width:100%; border-radius:8px; display:none; border:1px solid #ccc;">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-danger" style="width: 100%; font-size: 14px; padding: 12px;" onclick="addExpense()">📥 SIMPAN PENGELUARAN</button>
                 </div>
+                
                 <div class="card" style="padding: 0;">
                     <div class="table-responsive">
-                        <table><thead><tr><th>Deskripsi</th><th>Nominal</th><th>Aksi</th></tr></thead><tbody id="expenseTableBody"></tbody>
-                        <tfoot><tr><td style="text-align: right; font-weight: 900;">TOTAL:</td><td colspan="2" style="font-weight: 900; color: var(--danger);" id="expenseTotal">Rp 0</td></tr></tfoot></table>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Keterangan</th>
+                                    <th>Kategori & Sumber</th>
+                                    <th>Nominal</th>
+                                    <th style="text-align:center;">Bukti</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenseTableBody"></tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="2" style="text-align: right; font-weight: 900;">TOTAL KELUAR:</td>
+                                    <td colspan="3" style="font-weight: 900; color: var(--danger); font-size: 14px;" id="expenseTotal">Rp 0</td>
+                                </tr>
+                            </tfoot>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -421,6 +470,17 @@
         <!-- 7. PORTAL PENGATURAN & BT -->
         <div id="page-settings" class="page">
             <h2>Pengaturan Sistem & Profil Toko</h2>
+            
+            <div class="card" style="border-top: 4px solid var(--success); margin-bottom:15px;">
+                <h3 style="margin-bottom: 15px;">☁️ Integrasi Google Sheets (Otomatisasi)</h3>
+                <div class="form-group"><label>URL Webhook Aplikasi Web</label><input type="text" id="setWebhookUrl" placeholder="Masukkan Link Script Webhook di sini"></div>
+                <p style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Fitur ini akan merekap seluruh omzet harian dan rincian pengeluaran, lalu mengirimkannya ke Google Sheets Anda secara berurutan dengan penahan *rate-limit* otomatis.</p>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-success" style="flex:1;" onclick="saveStoreSettings()">💾 SIMPAN URL</button>
+                    <button id="syncSheetBtn" class="btn btn-warning" style="flex:2; color:black;" onclick="bulkSyncToSpreadsheet()">🔄 SINKRONKAN DATA KE SPREADSHEETS</button>
+                </div>
+            </div>
+
             <div class="split-layout">
                 <div class="card">
                     <h3 style="margin-bottom: 15px;">Profil Toko (Untuk Struk)</h3>
@@ -558,7 +618,8 @@
             activeShift: "1", 
             manualOverride: false, 
             portalPins: { expenses: "", inventory: "", staff: "", settings: "" }, 
-            btAutoPrint: true 
+            btAutoPrint: true,
+            webhookUrl: "https://script.google.com/macros/s/AKfycbysXkZQAdVH9bWJpHnOjbArU6ybVqTFFw_uSg8MtxRFtaR1q-rflKC9Q8jkqg41kmQa/exec" // URL Webhook Boss
         };
 
         let orders = JSON.parse(localStorage.getItem('pos_orders')) || [];
@@ -601,13 +662,96 @@
             return new Date().toLocaleDateString('id-ID');
         }
 
-        // Fungsi Simpan Setting/Global
         function syncToCloud(key, dataObj) {
             localStorage.setItem('pos_' + key, JSON.stringify(dataObj)); 
             db.ref('pos_data/' + key).set(dataObj).catch(err => {
                 console.error(err); showToast("Gagal sync ke Cloud, tapi tersimpan aman di HP!", "warning");
             });
         }
+
+        // ============================================================================
+        // BULK SYNC KE GOOGLE SHEETS (ANTREAN ANTI-RATE LIMIT)
+        // ============================================================================
+        async function bulkSyncToSpreadsheet() {
+            if(!settings.webhookUrl) { showToast("URL Webhook belum diisi di Pengaturan!", "error"); return; }
+            if(!confirm("Anda akan mengirim ulang seluruh data transaksi dari awal ke Spreadsheet. Pastikan Spreadsheet Anda masih bersih/kosong untuk bulan ini agar tidak dobel. Lanjutkan?")) return;
+
+            showToast("Memulai sinkronisasi... Jangan tutup halaman ini.", "info");
+            let btn = document.getElementById('syncSheetBtn');
+            btn.innerText = "⏳ SINKRONISASI BERJALAN...";
+            btn.disabled = true;
+
+            let syncQueue = [];
+
+            // 1. Kumpulkan Data Pengeluaran & Kasbon
+            if(expenses && expenses.length > 0) {
+                expenses.forEach(e => {
+                    syncQueue.push({
+                        type: "pengeluaran",
+                        date: getExpenseDate(e),
+                        name: e.name,
+                        category: e.category || "Lainnya",
+                        payment: e.payment || "Kas Tunai",
+                        amount: e.amount
+                    });
+                });
+            }
+
+            // 2. Kumpulkan Rekap Omzet Harian
+            let dailyOmzet = {};
+            if(orders && orders.length > 0) {
+                orders.forEach(o => {
+                    if(o.status === 'selesai') {
+                        let d = getOrderDate(o);
+                        if(!dailyOmzet[d]) dailyOmzet[d] = { cash: 0, qris: 0, ojol: 0, total: 0 };
+                        
+                        let pay = (o.payment || "").toLowerCase();
+                        if(pay === 'cash') dailyOmzet[d].cash += o.total;
+                        else if(['shopeefood', 'gofood', 'grabfood'].includes(pay)) dailyOmzet[d].ojol += o.total;
+                        else dailyOmzet[d].qris += o.total; // Semua transfer & QRIS masuk ke EDC/QR
+                        
+                        dailyOmzet[d].total += o.total;
+                    }
+                });
+            }
+
+            // Ubah object rekap harian jadi format antrean
+            for (let date in dailyOmzet) {
+                syncQueue.push({
+                    type: "omzet_harian",
+                    date: date,
+                    cash: dailyOmzet[date].cash,
+                    qris: dailyOmzet[date].qris,
+                    ojol: dailyOmzet[date].ojol,
+                    total: dailyOmzet[date].total
+                });
+            }
+
+            // 3. Tembakkan Data Secara Antrean (Jeda 1 Detik per data)
+            let successCount = 0;
+            for (let i = 0; i < syncQueue.length; i++) {
+                let item = syncQueue[i];
+                try {
+                    await fetch(settings.webhookUrl, {
+                        method: 'POST',
+                        mode: 'no-cors', // Mode ini penting agar bypass aturan CORS browser
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                        body: JSON.stringify(item)
+                    });
+                    successCount++;
+                } catch (err) {
+                    console.error("Gagal sync antrean ke-", i, err);
+                }
+                
+                // DELAY 1000ms (1 Detik) untuk Bypass Google Rate Limit (Penting)
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            btn.innerText = "🔄 SINKRONKAN DATA KE SPREADSHEETS";
+            btn.disabled = false;
+            showToast(`✅ Sinkronisasi Selesai! ${successCount} baris data berhasil disuntikkan ke Spreadsheet.`, "success");
+        }
+
 
         // ============================================================================
         // 3. FUNGSI SINKRONISASI ANTI-BENTROK (ATOMIC WRITES)
@@ -812,48 +956,109 @@
 
         function savePettyCash() { pettyCash = parseInt(document.getElementById('inputPettyCash').value) || 0; syncToCloud('pettyCash', pettyCash); document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash); renderRevenue(); showToast("Modal Awal diperbarui", "success"); }
         
+        // FUNGSI KOMPRESI FOTO PENGELUARAN AGAR HP TIDAK LAG
+        function compressExpensePhoto(input) {
+            if (input.files && input.files[0]) {
+                let reader = new FileReader();
+                reader.onload = function(e) {
+                    let img = new Image();
+                    img.onload = function() {
+                        let canvas = document.createElement('canvas');
+                        let ctx = canvas.getContext('2d');
+                        let maxWidth = 400; // Dikompres ke lebar 400px (Sangat Ringan)
+                        let scaleSize = maxWidth / img.width;
+                        canvas.width = maxWidth;
+                        canvas.height = img.height * scaleSize;
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        let base64str = canvas.toDataURL('image/jpeg', 0.6); // Kualitas 60%
+                        
+                        document.getElementById('expensePhotoBase64').value = base64str;
+                        document.getElementById('expensePhotoPreview').src = base64str;
+                        document.getElementById('expensePhotoPreview').style.display = 'block';
+                    }
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
         function addExpense() {
-            let name = document.getElementById('expenseName').value, amount = document.getElementById('expenseAmount').value;
-            if(!name || !amount) { showToast("Isi data pengeluaran", "error"); return; }
+            let name = document.getElementById('expenseName').value;
+            let cat = document.getElementById('expenseCategory').value;
+            let payment = document.getElementById('expensePayment').value;
+            let amount = document.getElementById('expenseAmount').value;
+            let photo = document.getElementById('expensePhotoBase64').value; // Mengambil string base64
+
+            if(!name || !amount) { showToast("Nama dan Nominal Wajib Diisi", "error"); return; }
             
             let todayDate = new Date().toLocaleDateString('id-ID'); 
-            let nE = { id: Date.now(), name: name, amount: parseInt(amount), date: todayDate };
+            let nE = { 
+                id: Date.now(), 
+                name: name, 
+                category: cat,
+                payment: payment,
+                amount: parseInt(amount), 
+                photo: photo,
+                date: todayDate 
+            };
             expenses.push(nE); 
             
             // INJEKSI CLOUD
             localStorage.setItem('pos_expenses', JSON.stringify(expenses));
             db.ref('pos_data/expenses/' + nE.id).set(nE);
             
-            document.getElementById('expenseName').value = ""; document.getElementById('expenseAmount').value = ""; 
-            renderExpenses(); renderRevenue(); showToast("Pengeluaran dicatat", "success");
+            // Reset Form Pengeluaran
+            document.getElementById('expenseName').value = ""; 
+            document.getElementById('expenseAmount').value = ""; 
+            document.getElementById('expensePhotoInput').value = "";
+            document.getElementById('expensePhotoBase64').value = "";
+            document.getElementById('expensePhotoPreview').style.display = "none";
+            
+            renderExpenses(); renderRevenue(); 
+            showToast("Pengeluaran berhasil dicatat", "success");
         }
         
         function deleteExpense(id) { 
-            if(confirm("Hapus catatan ini?")) { 
+            if(confirm("Hapus catatan pengeluaran ini?")) { 
                 expenses = expenses.filter(e => e.id !== id); 
                 // HAPUS DARI CLOUD
                 localStorage.setItem('pos_expenses', JSON.stringify(expenses));
                 db.ref('pos_data/expenses/' + id).remove();
-                renderExpenses(); renderRevenue(); showToast("Dihapus", "success"); 
+                renderExpenses(); renderRevenue(); showToast("Catatan Dihapus", "success"); 
             } 
         }
         
+        function viewExpensePhoto(base64str) {
+            let win = window.open();
+            win.document.write(`<img src="${base64str}" style="max-width:100%;">`);
+        }
+
         function renderExpenses() {
             let tbody = document.getElementById('expenseTableBody'); let total = 0;
             let targetDate = getSelectedDate(); 
             
             if(!expenses || expenses.length===0) { 
-                tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;">Kosong.</td></tr>`; 
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Kosong.</td></tr>`; 
             } else { 
                 let targetExpenses = expenses.filter(e => getExpenseDate(e) === targetDate); 
                 
                 if (targetExpenses.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="3" style="text-align:center;">Belum ada pengeluaran di tanggal ini.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Belum ada pengeluaran di tanggal ini.</td></tr>`;
                 } else {
                     let html = '';
                     targetExpenses.forEach(e => { 
                         total += e.amount; 
-                        html += `<tr><td style="font-weight:700;">${e.name}</td><td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px; color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button></td></tr>`; 
+                        let btnFoto = e.photo ? `<button class="btn btn-primary" style="padding:4px; font-size:10px;" onclick="viewExpensePhoto('${e.photo}')">Lihat Struk</button>` : `<span style="font-size:10px; color:#ccc;">-Tidak Ada-</span>`;
+                        let catName = e.category || 'Lainnya';
+                        let payMethod = e.payment || 'Kas Tunai';
+
+                        html += `<tr>
+                                    <td style="font-weight:700;">${e.name}</td>
+                                    <td style="font-size:11px; color:var(--text-muted); line-height:1.4;"><strong>${catName}</strong><br>Via: ${payMethod}</td>
+                                    <td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td>
+                                    <td style="text-align:center;">${btnFoto}</td>
+                                    <td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px; color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button></td>
+                                </tr>`; 
                     });
                     tbody.innerHTML = html;
                 }
@@ -908,7 +1113,10 @@
             
             let report = `*OMZET TGL ${dateStr}*\n\nCASH: ${formatRpText(tc)}\nQRIS: ${formatRpText(tq)}\nOJOL: ${formatRpText(to)}\nTOTAL: ${formatRpText(tc+tq+to)}\n__________________________\nCASH: ${formatRpText(tc)}\nPETTY CASH: ${formatRpText(pettyCash)}\nTOTAL CASH: ${formatRpText(tcPetty)}\n__________________________\n*PENGELUARAN*\n\n`;
             
-            if(targetExpenses.length===0) report += `(Tidak ada)\n`; else targetExpenses.forEach(e => { report += `# ${e.name} : ${formatRpText(e.amount)}\n`; });
+            if(targetExpenses.length===0) report += `(Tidak ada)\n`; else targetExpenses.forEach(e => { 
+                let pCat = e.category && e.category !== "Lainnya" ? `[${e.category}] ` : "";
+                report += `# ${pCat}${e.name} : ${formatRpText(e.amount)}\n`; 
+            });
             
             report += `TOTAL KELUAR: ${formatRpText(expTotal)}\n_________________________\nSISA CASH (FISIK LACI): ${formatRpText(sisa)}\n\n*(${formatRpText(sisa)})*`; return report;
         }
@@ -919,6 +1127,7 @@
             const targetDate = getSelectedDate();
             let wb = XLSX.utils.book_new();
 
+            // 1. Data Transaksi
             let orderData = [
                 ["LAPORAN TRANSAKSI TANGGAL", targetDate],
                 [],
@@ -934,15 +1143,16 @@
             let wsOrders = XLSX.utils.aoa_to_sheet(orderData);
             XLSX.utils.book_append_sheet(wb, wsOrders, "Transaksi");
 
+            // 2. Data Pengeluaran Terupdate
             let expenseData = [
                 ["LAPORAN PENGELUARAN TANGGAL", targetDate],
                 [],
-                ["Nama Pengeluaran", "Nominal"]
+                ["Keterangan", "Kategori", "Sumber Dana", "Nominal"]
             ];
             
             if(expenses) {
                 expenses.filter(e => getExpenseDate(e) === targetDate).forEach(e => {
-                    expenseData.push([e.name, e.amount]);
+                    expenseData.push([e.name, (e.category || "Lainnya"), (e.payment || "Kas Tunai"), e.amount]);
                 });
             }
             let wsExpenses = XLSX.utils.aoa_to_sheet(expenseData);
@@ -1006,6 +1216,7 @@
             document.getElementById('setStoreName').value = settings.storeName || ""; 
             document.getElementById('setFooter').value = settings.footer || ""; 
             document.getElementById('btAutoPrint').checked = settings.btAutoPrint !== false; 
+            document.getElementById('setWebhookUrl').value = settings.webhookUrl || ""; 
             if(settings.logoBase64) { 
                 document.getElementById('logoPreview').src = settings.logoBase64; 
                 document.getElementById('logoPreview').style.display = 'inline-block'; 
@@ -1015,9 +1226,10 @@
         function saveStoreSettings() { 
             settings.storeName = document.getElementById('setStoreName').value; 
             settings.footer = document.getElementById('setFooter').value; 
+            settings.webhookUrl = document.getElementById('setWebhookUrl').value;
             syncToCloud('settings', settings); 
             renderPOS(currentPosFilter); 
-            showToast("Profil Disimpan", "success"); 
+            showToast("Pengaturan Tersimpan", "success"); 
         }
         
         function updateAutoPrintSetting(isChecked) { settings.btAutoPrint = isChecked; syncToCloud('settings', settings); showToast(isChecked ? "Auto-Print On" : "Auto-Print Off", "info"); }
