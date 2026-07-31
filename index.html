@@ -91,13 +91,13 @@
 
         .form-group { margin-bottom: 12px; }
         .form-group label { display: block; margin-bottom: 5px; font-weight: 700; font-size: 12px;}
-        .form-group input, .form-group select { width: 100%; padding: 10px; background: #f9fafc; border: 2px solid var(--border-color); border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--text-main); }
-        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary); background: #fff;}
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; background: #f9fafc; border: 2px solid var(--border-color); border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--text-main); }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--primary); background: #fff;}
 
         /* TABLES */
         .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; min-width: 500px; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 12px; vertical-align: middle;}
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 12px;}
         th { background-color: #f1f4f8; font-weight: 800; text-transform: uppercase; font-size: 11px; }
 
         .tabs { display: flex; gap: 8px; margin-bottom: 15px; overflow-x: auto; padding-bottom: 5px; flex-shrink: 0; -webkit-overflow-scrolling: touch;}
@@ -177,11 +177,9 @@
 </head>
 <body>
     
-    <!-- TEMPAT TOAST NOTIFICATION -->
     <div id="toastBox"></div>
     <div id="printReceiptArea" style="display: none;"></div>
 
-    <!-- NAVIGATION SIDEBAR (LOGO APP TETAP UNDERCORP) -->
     <div class="sidebar">
         <div class="brand">
             <div class="brand-logo-text"><span class="under">UNDER</span><span class="corp">CORP</span></div>
@@ -206,12 +204,10 @@
         <!-- 1. PORTAL TRANSAKSI KASIR -->
         <div id="page-pos" class="page active">
             <div class="transaction-layout">
-                
                 <div class="product-area">
                     <div class="search-container">
                         <input type="text" id="searchPosMenu" placeholder="🔍 Cari menu di sini..." oninput="renderPOS(currentPosFilter)">
                     </div>
-
                     <div class="tabs" id="categoryFilters"></div>
                     <div class="product-grid" id="productGrid"></div>
                 </div>
@@ -221,11 +217,9 @@
                         <h3 id="cartTitle">Pesanan Baru</h3>
                         <input type="text" id="orderNote" placeholder="Nama / Meja / Ojol" style="width:125px; padding:6px; border:2px solid var(--border-color); border-radius:6px; font-weight:700; font-size:11px;">
                     </div>
-                    
                     <div class="cart-items" id="cartItems"></div>
                     
                     <div class="cart-summary">
-                        <!-- Fitur Diskon -->
                         <div style="display: flex; gap: 5px; margin-bottom: 10px; align-items: center;">
                             <select id="discountType" style="padding: 6px; border-radius: 6px; font-size: 11px; border: 1px solid var(--border-color); font-weight: 800; color: var(--primary);" onchange="updateCartUI()">
                                 <option value="Rp">Rp</option>
@@ -263,11 +257,10 @@
             </div>
         </div>
 
-        <!-- 2. PORTAL LAPORAN OMZET (DENGAN DATE PICKER) -->
+        <!-- 2. PORTAL LAPORAN OMZET -->
         <div id="page-revenue" class="page">
             <h2>Laporan Omzet & Arus Kas</h2>
             
-            <!-- Fitur Pilih Tanggal Laporan -->
             <div class="card" style="margin-bottom: 20px; background: #e6fffa; border-color: var(--success);">
                 <div class="form-group" style="margin-bottom: 0;">
                     <label style="color: var(--success); font-weight: 900; font-size: 14px;">📅 TAMPILKAN DATA TANGGAL:</label>
@@ -283,8 +276,8 @@
                     </div>
                     <button class="btn btn-outline" onclick="savePettyCash()">SIMPAN MODAL</button>
                     <button class="btn btn-primary" onclick="generateReport()">📋 COPY TEKS</button>
-                    <button class="btn btn-success" onclick="downloadExcel()">📊 DOWNLOAD EXCEL ASLI</button>
-                    <button class="btn btn-wa" onclick="shareExcelToWA()">📲 KIRIM WA/BISNIS</button>
+                    <button class="btn btn-success" onclick="downloadExcel()">📊 DOWNLOAD EXCEL</button>
+                    <button class="btn btn-wa" onclick="shareExcelToWA()">📲 KIRIM WA</button>
                 </div>
                 <div style="margin-top: 10px; font-size: 12px; color: var(--success);" id="pettyCashStatus">Petty Cash: Rp 0</div>
             </div>
@@ -308,7 +301,6 @@
                 </div>
             </div>
 
-            <!-- Ojol Section -->
             <div class="card" style="margin-bottom: 20px; border-color:#ccc; background:#fafbfc;">
                 <h3 style="color:var(--text-muted); font-size:12px; margin-bottom:8px;">PESANAN OJOL (ONLINE) 🛵</h3>
                 <div id="revOjolTotal" style="font-size:20px; font-weight:900; margin-bottom:10px;">Rp 0</div>
@@ -319,78 +311,78 @@
                 </div>
             </div>
 
-            <div class="card" style="border-color:var(--primary); background:#fff5f5;">
-                <h3 style="color:var(--primary); font-size:12px; margin-bottom:8px;">TOTAL OMZET (SESUAI TANGGAL) 💰</h3>
-                <div id="revGrandTotal" style="font-size:26px; font-weight:900; color:var(--primary); margin-bottom:10px;">Rp 0</div>
-                <div style="display:flex; justify-content:space-between; border-top:2px dashed #feb2b2; padding-top:10px;">
-                    <div style="text-align:center; flex:1; border-right:2px dashed #feb2b2;"><span style="font-size:10px; color:var(--primary);">Total Cash Fisik</span><br><strong id="revGrandCash">Rp 0</strong></div>
-                    <div style="text-align:center; flex:1;"><span style="font-size:10px; color:var(--primary);">Total Non-Tunai & Ojol</span><br><strong id="revGrandNonTunai">Rp 0</strong></div>
+            <!-- LAPORAN DATA OMZET AKHIR -->
+            <div class="card" style="border-top:4px solid var(--primary); background:#fffdfd; margin-bottom:20px;">
+                <h3 style="color:var(--primary); font-size:15px; margin-bottom:15px; font-weight: 900; text-align: center;">LAPORAN DATA OMZET AKHIR 📊</h3>
+                
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-weight:700; font-size:13px; color:var(--text-main);">
+                    <span>Total omzet cash:</span> <span id="finalOmzetCash" style="color:var(--success);">Rp 0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-weight:700; font-size:13px; color:var(--text-main);">
+                    <span>Total Omzet Qris:</span> <span id="finalOmzetQris" style="color:var(--info);">Rp 0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-weight:700; font-size:13px; color:var(--text-main);">
+                    <span>Total Omzet ojol:</span> <span id="finalOmzetOjol" style="color:var(--warning);">Rp 0</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:15px; font-weight:900; font-size:14px; color:var(--primary); border-bottom: 2px dashed var(--border-color); padding-bottom: 10px;">
+                    <span>Total Omzet:</span> <span id="finalOmzetTotal">Rp 0</span>
+                </div>
+                
+                <div style="display:flex; justify-content:space-between; font-size:16px; font-weight:900; color:var(--success);">
+                    <div style="line-height:1.2;">
+                        SISA CASH FISIK:
+                        <div style="font-size:9px; color:var(--text-muted); font-weight:600;">(Omzet Cash + Petty Cash - Pengeluaran)</div>
+                    </div> 
+                    <span id="finalUangFisik">Rp 0</span>
                 </div>
             </div>
         </div>
 
-        <!-- 3. PORTAL PENGELUARAN (DIPERBARUI) -->
+        <!-- 3. PORTAL PENGELUARAN (DENGAN EDIT FITUR) -->
         <div id="page-expenses" class="page">
-            <h2>Pencatatan Pengeluaran & Kasbon</h2>
+            <h2>Pencatatan Pengeluaran</h2>
             <div class="split-layout">
                 <div class="card">
-                    <div class="form-group"><label>Keterangan / Nama Karyawan Kasbon</label><input type="text" id="expenseName" placeholder="Contoh: Beli Es Batu / KASBON Budi"></div>
-                    
-                    <div class="form-group"><label>Kategori Pengeluaran</label>
-                        <select id="expenseCategory">
-                            <option value="HPP">HPP (Bahan Baku / Stok)</option>
-                            <option value="Beban Dapur dan Umum">Beban Dapur & Umum</option>
-                            <option value="Beban Listrik/Air/Telpon">Beban Listrik/Air/Telpon</option>
-                            <option value="Beban Alat Tulis Kantor">Beban Alat Tulis Kantor</option>
-                            <option value="Beban Gaji/Upah/Tunjangan">Beban Gaji/Upah/Tunjangan</option>
-                            <option value="Beban Iklan/Promosi">Beban Iklan/Promosi</option>
-                            <option value="Beban Sewa">Beban Sewa</option>
-                            <option value="Kasbon/Piutang">Kasbon / Piutang Karyawan</option>
-                            <option value="Lainnya">Lainnya</option>
+                    <input type="hidden" id="expenseId">
+                    <div class="form-group">
+                        <label>Pembayaran</label>
+                        <select id="expensePayment" required>
+                          <option value="" disabled selected>Pilih Pembayaran...</option>
+                          <option value="KAS TUNAI">KAS TUNAI</option>
+                          <option value="KAS NON PPN">KAS NON PPN</option>
+                          <option value="BANK BRI - CAFFE">BANK BRI - CAFFE</option>
+                          <option value="HUTANG USAHA">HUTANG USAHA</option>
                         </select>
                     </div>
-
-                    <div class="form-group"><label>Opsi Pembayaran (Sumber Dana)</label>
-                        <select id="expensePayment">
-                            <option value="Kas Tunai">Kas Tunai (Laci Kasir)</option>
-                            <option value="Transfer Bank">Transfer / Bank</option>
+                    <div class="form-group">
+                        <label>Kategori</label>
+                        <select id="expenseCategory" required>
+                          <option value="" disabled selected>Pilih Kategori...</option>
+                          <option value="REFUND CUSTOMER">REFUND CUSTOMER</option>
+                          <option value="BEBAN ADMINISTRASI BANK">BEBAN ADMINISTRASI BANK</option>
+                          <option value="BEBAN DAPUR DAN UMUM">BEBAN DAPUR DAN UMUM</option>
+                          <option value="BEBAN ALAT TULIS KANTOR">BEBAN ALAT TULIS KANTOR</option>
+                          <option value="BEBAN SEWA">BEBAN SEWA</option>
+                          <option value="BEBAN GAJI/UPAH/TUNJANGAN LAINNYA">BEBAN GAJI/UPAH/TUNJANGAN LAINNYA</option>
+                          <option value="BEBAN LISTRIK/AIR/TELPON">BEBAN LISTRIK/AIR/TELPON</option>
+                          <option value="BEBAN IKLAN/PROMOSI">BEBAN IKLAN/PROMOSI</option>
+                          <option value="PRIVE">PRIVE</option>
+                          <option value="MODAL">MODAL</option>
+                          <option value="PERSEDIAAN">PERSEDIAAN</option>
+                          <option value="PELUNASAN HUTANG">PELUNASAN HUTANG</option>
+                          <option value="PERABOT DAN INVENTARIS">PERABOT DAN INVENTARIS</option>
+                          <option value="PIUTANG">PIUTANG</option>
                         </select>
                     </div>
-
-                    <div class="form-group"><label>Nominal (Rp)</label><input type="number" id="expenseAmount" placeholder="Contoh: 50000"></div>
-                    
-                    <div class="form-group" style="background:#f0f2f5; padding:10px; border-radius:8px; border:1px dashed var(--border-color);">
-                        <label>📸 Upload Foto Struk/Nota (Opsional)</label>
-                        <input type="file" id="expensePhotoInput" accept="image/*" onchange="compressExpensePhoto(this)" style="background:white; padding:6px; font-size: 11px;">
-                        <input type="hidden" id="expensePhotoBase64">
-                        <div style="text-align:center; margin-top:10px;">
-                            <img id="expensePhotoPreview" style="max-width:100%; border-radius:8px; display:none; border:1px solid #ccc;">
-                        </div>
-                    </div>
-
-                    <button class="btn btn-danger" style="width: 100%; font-size: 14px; padding: 12px;" onclick="addExpense()">📥 SIMPAN PENGELUARAN</button>
+                    <div class="form-group"><label>Nama/Keterangan</label><input type="text" id="expenseName"></div>
+                    <div class="form-group"><label>Nominal (Rp)</label><input type="number" id="expenseAmount"></div>
+                    <button class="btn btn-danger" id="btnSaveExpense" style="width: 100%;" onclick="addExpense()">SIMPAN PENGELUARAN</button>
+                    <button class="btn btn-outline" id="btnCancelExpense" style="width: 100%; margin-top:8px; display:none;" onclick="cancelEditExpense()">BATAL EDIT</button>
                 </div>
-                
                 <div class="card" style="padding: 0;">
                     <div class="table-responsive">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Keterangan</th>
-                                    <th>Kategori & Sumber</th>
-                                    <th>Nominal</th>
-                                    <th style="text-align:center;">Bukti</th>
-                                    <th>Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody id="expenseTableBody"></tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colspan="2" style="text-align: right; font-weight: 900;">TOTAL KELUAR:</td>
-                                    <td colspan="3" style="font-weight: 900; color: var(--danger); font-size: 14px;" id="expenseTotal">Rp 0</td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                        <table><thead><tr><th>Kat & Pembayaran</th><th>Deskripsi</th><th>Nominal</th><th>Aksi</th></tr></thead><tbody id="expenseTableBody"></tbody>
+                        <tfoot><tr><td colspan="2" style="text-align: right; font-weight: 900;">TOTAL:</td><td colspan="2" style="font-weight: 900; color: var(--danger);" id="expenseTotal">Rp 0</td></tr></tfoot></table>
                     </div>
                 </div>
             </div>
@@ -431,7 +423,6 @@
             </div>
             <div class="card" style="padding:0;">
                 <div class="table-responsive">
-                    <!-- Terdapat Penambahan Kolom Menu Pesanan -->
                     <table><thead><tr><th>ID</th><th>Waktu</th><th>Pelanggan</th><th>Menu Pesanan</th><th>Status/Metode</th><th>Total</th><th>Aksi</th></tr></thead><tbody id="historyTableBody"></tbody></table>
                 </div>
             </div>
@@ -470,17 +461,6 @@
         <!-- 7. PORTAL PENGATURAN & BT -->
         <div id="page-settings" class="page">
             <h2>Pengaturan Sistem & Profil Toko</h2>
-            
-            <div class="card" style="border-top: 4px solid var(--success); margin-bottom:15px;">
-                <h3 style="margin-bottom: 15px;">☁️ Integrasi Google Sheets (Otomatisasi)</h3>
-                <div class="form-group"><label>URL Webhook Aplikasi Web</label><input type="text" id="setWebhookUrl" placeholder="Masukkan Link Script Webhook di sini"></div>
-                <p style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Fitur ini akan merekap seluruh omzet harian dan rincian pengeluaran, lalu mengirimkannya ke Google Sheets Anda secara berurutan dengan penahan *rate-limit* otomatis.</p>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-success" style="flex:1;" onclick="saveStoreSettings()">💾 SIMPAN URL</button>
-                    <button id="syncSheetBtn" class="btn btn-warning" style="flex:2; color:black;" onclick="bulkSyncToSpreadsheet()">🔄 SINKRONKAN DATA KE SPREADSHEETS</button>
-                </div>
-            </div>
-
             <div class="split-layout">
                 <div class="card">
                     <h3 style="margin-bottom: 15px;">Profil Toko (Untuk Struk)</h3>
@@ -513,10 +493,20 @@
                     </div>
 
                     <div style="background:#f4f6f8; border:1px solid var(--border-color); padding:10px; border-radius:8px; margin-bottom:10px;">
-                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:800; font-size:12px; margin-bottom:0;"><input type="checkbox" id="btAutoPrint" onchange="updateAutoPrintSetting(this.checked)" checked style="width:16px; height:16px;"> Auto Cetak Saat Bayar / Pesanan Web</label>
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:800; font-size:12px; margin-bottom:0;"><input type="checkbox" id="btAutoPrint" onchange="updateAutoPrintSetting(this.checked)" checked style="width:16px; height:16px;"> Auto Cetak Saat Bayar</label>
                     </div>
 
                     <button class="btn btn-outline" style="width:100%;" onclick="testPrint()">TEST PRINT (Simulasi)</button>
+                </div>
+                
+                <div class="card" style="border-top: 4px solid var(--success);">
+                    <h3 style="margin-bottom: 15px;">Sinkronisasi Google Sheets</h3>
+                    <div class="form-group">
+                        <label>URL Webhook Apps Script</label>
+                        <input type="text" id="setWebhookUrl" placeholder="https://script.google.com/macros/s/.../exec">
+                    </div>
+                    <button class="btn btn-success" onclick="saveStoreSettings()" style="width:100%; margin-bottom: 10px;">SIMPAN URL</button>
+                    <button class="btn btn-warning" onclick="syncToSheets()" style="width:100%; color:black;">🔄 SINKRONKAN KE SPREADSHEETS</button>
                 </div>
             </div>
         </div>
@@ -530,7 +520,12 @@
                 <div class="form-group"><label>Sandi STOK & PRODUK</label><input type="password" id="pin-inventory"></div>
                 <div class="form-group"><label>Sandi KARYAWAN & SHIFT</label><input type="password" id="pin-staff"></div>
                 <div class="form-group"><label>Sandi PENGATURAN</label><input type="password" id="pin-settings"></div>
-                <button class="btn btn-warning" style="width:100%; color:#000;" onclick="saveAdminPins()">SIMPAN SANDI PORTAL</button>
+                <!-- TAMBAHAN SANDI SINKRONISASI -->
+                <div class="form-group" style="margin-top: 15px; border-top: 2px dashed var(--warning); padding-top: 15px;">
+                    <label style="color:var(--danger);">Sandi SINKRONISASI SHEETS</label>
+                    <input type="password" id="pin-sync" placeholder="Sandi khusus tombol sinkron">
+                </div>
+                <button class="btn btn-warning" style="width:100%; color:#000; margin-top: 10px;" onclick="saveAdminPins()">SIMPAN SANDI PORTAL</button>
             </div>
         </div>
     </div>
@@ -576,7 +571,7 @@
                 };
                 beep(ctx.currentTime, 800);
                 beep(ctx.currentTime + 0.3, 1000);
-            } catch(e) { console.log("Buzzer gagal, interaksi layar belum dilakukan.", e); }
+            } catch(e) {}
         }
 
         // ============================================================================
@@ -596,8 +591,14 @@
         const db = firebase.database();
 
         // ============================================================================
-        // 2. OFFLINE PERSISTENCE (LOCAL STORAGE) & DATA ABADI
+        // 2. OFFLINE PERSISTENCE & ANTI-ERROR VAKSIN
         // ============================================================================
+        function forceArray(data) {
+            if (!data) return [];
+            if (Array.isArray(data)) return data;
+            return Object.values(data);
+        }
+
         let cart = []; 
         let currentPosFilter = 'Semua';
         let editingOrderId = null;
@@ -617,16 +618,16 @@
             shift2Name: "", 
             activeShift: "1", 
             manualOverride: false, 
-            portalPins: { expenses: "", inventory: "", staff: "", settings: "" }, 
+            portalPins: { expenses: "", inventory: "", staff: "", settings: "", sync: "" }, // TAMBAHAN SYNC PIN
             btAutoPrint: true,
-            webhookUrl: "https://script.google.com/macros/s/AKfycbysXkZQAdVH9bWJpHnOjbArU6ybVqTFFw_uSg8MtxRFtaR1q-rflKC9Q8jkqg41kmQa/exec" // URL Webhook Boss
+            webhookUrl: "" 
         };
 
-        let orders = JSON.parse(localStorage.getItem('pos_orders')) || [];
-        let expenses = JSON.parse(localStorage.getItem('pos_expenses')) || [];
+        let orders = forceArray(JSON.parse(localStorage.getItem('pos_orders')));
+        let expenses = forceArray(JSON.parse(localStorage.getItem('pos_expenses')));
         let pettyCash = parseInt(localStorage.getItem('pos_pettyCash')) || 0;
         let staffList = JSON.parse(localStorage.getItem('pos_staffList')) || { "Capster": [], "Kitchen": [], "Bar": [] };
-        let products = JSON.parse(localStorage.getItem('pos_products')) || [];
+        let products = forceArray(JSON.parse(localStorage.getItem('pos_products')));
         let settings = JSON.parse(localStorage.getItem('pos_settings')) || defaultSettings;
 
         if (settings.storeName === "UNDERCORP POS" || settings.storeName === "UNDERCORP POS - Ultimate Persistent") {
@@ -637,12 +638,7 @@
 
         let printerKasirCharacteristic = null; let printerDapurCharacteristic = null;
 
-        function getExpenseDate(e) {
-            if (e.date) return e.date;
-            if (e.id) return new Date(e.id).toLocaleDateString('id-ID'); 
-            return new Date().toLocaleDateString('id-ID');
-        }
-
+        function getExpenseDate(e) { return e.date ? e.date : (e.id ? new Date(e.id).toLocaleDateString('id-ID') : new Date().toLocaleDateString('id-ID')); }
         function getOrderDate(o) {
             if (o.date) return o.date;
             let t = String(o.time).toLowerCase();
@@ -656,128 +652,26 @@
             let val = document.getElementById('revenueDate') ? document.getElementById('revenueDate').value : "";
             if(!val) return new Date().toLocaleDateString('id-ID');
             let parts = val.split('-');
-            if(parts.length === 3) {
-                return new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString('id-ID');
-            }
+            if(parts.length === 3) return new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString('id-ID');
             return new Date().toLocaleDateString('id-ID');
         }
 
         function syncToCloud(key, dataObj) {
             localStorage.setItem('pos_' + key, JSON.stringify(dataObj)); 
-            db.ref('pos_data/' + key).set(dataObj).catch(err => {
-                console.error(err); showToast("Gagal sync ke Cloud, tapi tersimpan aman di HP!", "warning");
-            });
+            db.ref('pos_data/' + key).set(dataObj).catch(err => { console.error(err); showToast("Gagal sync ke Cloud, tapi tersimpan aman di HP!", "warning"); });
         }
 
-        // ============================================================================
-        // BULK SYNC KE GOOGLE SHEETS (ANTREAN ANTI-RATE LIMIT)
-        // ============================================================================
-        async function bulkSyncToSpreadsheet() {
-            if(!settings.webhookUrl) { showToast("URL Webhook belum diisi di Pengaturan!", "error"); return; }
-            if(!confirm("Anda akan mengirim ulang seluruh data transaksi dari awal ke Spreadsheet. Pastikan Spreadsheet Anda masih bersih/kosong untuk bulan ini agar tidak dobel. Lanjutkan?")) return;
-
-            showToast("Memulai sinkronisasi... Jangan tutup halaman ini.", "info");
-            let btn = document.getElementById('syncSheetBtn');
-            btn.innerText = "⏳ SINKRONISASI BERJALAN...";
-            btn.disabled = true;
-
-            let syncQueue = [];
-
-            // 1. Kumpulkan Data Pengeluaran & Kasbon
-            if(expenses && expenses.length > 0) {
-                expenses.forEach(e => {
-                    syncQueue.push({
-                        type: "pengeluaran",
-                        date: getExpenseDate(e),
-                        name: e.name,
-                        category: e.category || "Lainnya",
-                        payment: e.payment || "Kas Tunai",
-                        amount: e.amount
-                    });
-                });
-            }
-
-            // 2. Kumpulkan Rekap Omzet Harian
-            let dailyOmzet = {};
-            if(orders && orders.length > 0) {
-                orders.forEach(o => {
-                    if(o.status === 'selesai') {
-                        let d = getOrderDate(o);
-                        if(!dailyOmzet[d]) dailyOmzet[d] = { cash: 0, qris: 0, ojol: 0, total: 0 };
-                        
-                        let pay = (o.payment || "").toLowerCase();
-                        if(pay === 'cash') dailyOmzet[d].cash += o.total;
-                        else if(['shopeefood', 'gofood', 'grabfood'].includes(pay)) dailyOmzet[d].ojol += o.total;
-                        else dailyOmzet[d].qris += o.total; // Semua transfer & QRIS masuk ke EDC/QR
-                        
-                        dailyOmzet[d].total += o.total;
-                    }
-                });
-            }
-
-            // Ubah object rekap harian jadi format antrean
-            for (let date in dailyOmzet) {
-                syncQueue.push({
-                    type: "omzet_harian",
-                    date: date,
-                    cash: dailyOmzet[date].cash,
-                    qris: dailyOmzet[date].qris,
-                    ojol: dailyOmzet[date].ojol,
-                    total: dailyOmzet[date].total
-                });
-            }
-
-            // 3. Tembakkan Data Secara Antrean (Jeda 1 Detik per data)
-            let successCount = 0;
-            for (let i = 0; i < syncQueue.length; i++) {
-                let item = syncQueue[i];
-                try {
-                    await fetch(settings.webhookUrl, {
-                        method: 'POST',
-                        mode: 'no-cors', // Mode ini penting agar bypass aturan CORS browser
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
-                        body: JSON.stringify(item)
-                    });
-                    successCount++;
-                } catch (err) {
-                    console.error("Gagal sync antrean ke-", i, err);
-                }
-                
-                // DELAY 1000ms (1 Detik) untuk Bypass Google Rate Limit (Penting)
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-
-            btn.innerText = "🔄 SINKRONKAN DATA KE SPREADSHEETS";
-            btn.disabled = false;
-            showToast(`✅ Sinkronisasi Selesai! ${successCount} baris data berhasil disuntikkan ke Spreadsheet.`, "success");
-        }
-
-
-        // ============================================================================
-        // 3. FUNGSI SINKRONISASI ANTI-BENTROK (ATOMIC WRITES)
-        // ============================================================================
         function fetchPosDataFromFirebase() {
             document.getElementById('syncDataStatus').innerText = "🔄 Syncing...";
             db.ref('pos_data').on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data) {
-                    let newOrders = data.orders ? Object.values(data.orders).filter(Boolean) : [];
-                    orders = newOrders;
+                    orders = forceArray(data.orders);
+                    expenses = forceArray(data.expenses);
                     
-                    let newExpenses = data.expenses ? Object.values(data.expenses).filter(Boolean) : [];
-                    expenses = newExpenses;
-
                     if (data.pettyCash !== undefined) pettyCash = data.pettyCash;
                     if (data.staffList) staffList = data.staffList;
-                    
-                    if (data.settings) {
-                        settings = { ...defaultSettings, ...data.settings };
-                        if (settings.storeName === "UNDERCORP POS" || settings.storeName === "UNDERCORP POS - Ultimate Persistent") {
-                            settings.storeName = "WARMINDO DSAMBER";
-                            settings.footer = "Terimakasih sudah berkunjung!\nKritik dan saran kirim ke WhatsApp: 0813-8191-866 | Instagram: @warmindo_dsamber";
-                            db.ref('pos_data/settings').set(settings); 
-                        }
-                    }
+                    if (data.settings) settings = { ...defaultSettings, ...data.settings };
                     
                     localStorage.setItem('pos_orders', JSON.stringify(orders));
                     localStorage.setItem('pos_expenses', JSON.stringify(expenses));
@@ -786,28 +680,22 @@
                     localStorage.setItem('pos_settings', JSON.stringify(settings));
 
                     if (!isInitialLoad) {
-                        newOrders.forEach(o => {
+                        orders.forEach(o => {
                             if (!knownOrderIds.has(o.id) && o.status === 'pending' && o.shift === 'Online Web') {
-                                showToast(`PESANAN BARU DARI WEB: ${o.customer}`, "warning");
-                                playBuzzer();
-                                if (document.getElementById('btAutoPrint').checked) {
-                                    executePrint(o, true);
-                                }
+                                showToast(`PESANAN BARU DARI WEB: ${o.customer}`, "warning"); playBuzzer();
+                                if (document.getElementById('btAutoPrint').checked) executePrint(o, true);
                             }
                         });
                     }
-                    
                     knownOrderIds.clear();
-                    newOrders.forEach(o => knownOrderIds.add(o.id));
+                    orders.forEach(o => knownOrderIds.add(o.id));
                     isInitialLoad = false;
                     
                     renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings();
-                    renderRevenue(); renderExpenses(); 
-                    filterHistory(window.currentHistoryFilter); 
-                    updateSidebarCashier();
+                    renderRevenue(); renderExpenses(); filterHistory(window.currentHistoryFilter); updateSidebarCashier();
                 }
                 document.getElementById('syncDataStatus').innerText = "✅ Synced";
-            }, (error) => { showToast("Gagal terhubung Cloud, pakai data Lokal", "error"); });
+            }, (error) => { showToast("Gagal terhubung Cloud", "error"); });
         }
 
         function formatRp(angka) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka); }
@@ -815,11 +703,8 @@
         function getTimestamp() { let d = new Date(); return d.toLocaleString('id-ID', { hour:'2-digit', minute:'2-digit', day:'2-digit', month:'short' }); }
 
         function attemptPage(pageId) {
-            if (pageId === 'admin') {
-                if (prompt("Masukkan Kode Admin:") !== "2024UDC") { showToast("Kode Admin Salah!", "error"); return; }
-            } else if (settings.portalPins && settings.portalPins[pageId]) {
-                if (prompt("Masukkan Sandi Portal:") !== settings.portalPins[pageId]) { showToast("Sandi Portal Salah!", "error"); return; }
-            }
+            if (pageId === 'admin') { if (prompt("Masukkan Kode Admin:") !== "2024UDC") { showToast("Kode Admin Salah!", "error"); return; }
+            } else if (settings.portalPins && settings.portalPins[pageId]) { if (prompt("Masukkan Sandi Portal:") !== settings.portalPins[pageId]) { showToast("Sandi Portal Salah!", "error"); return; } }
             switchPage(pageId);
         }
 
@@ -845,6 +730,7 @@
                 document.getElementById('pin-inventory').value = settings.portalPins.inventory || "";
                 document.getElementById('pin-staff').value = settings.portalPins.staff || "";
                 document.getElementById('pin-settings').value = settings.portalPins.settings || "";
+                document.getElementById('pin-sync').value = settings.portalPins.sync || ""; // LOAD SYNC PIN
             }
         }
         function saveAdminPins() {
@@ -852,6 +738,7 @@
             settings.portalPins.inventory = document.getElementById('pin-inventory').value;
             settings.portalPins.staff = document.getElementById('pin-staff').value;
             settings.portalPins.settings = document.getElementById('pin-settings').value;
+            settings.portalPins.sync = document.getElementById('pin-sync').value; // SAVE SYNC PIN
             syncToCloud('settings', settings); showToast("Sandi Portal disimpan", "success"); attemptPage('pos'); 
         }
 
@@ -884,14 +771,12 @@
         }
 
         function renderStaffList() {
-            let tbody = document.getElementById('staffTableBody'); 
-            let html = ''; let has = false;
+            let tbody = document.getElementById('staffTableBody'); let trHtml = ''; let has = false;
             for (let role in staffList) {
                 if(staffList[role] && staffList[role].length > 0) has = true;
-                if(staffList[role]) staffList[role].forEach(name => { html += `<tr><td style="font-weight:700;">${name}</td><td>${role}</td><td><button class="btn btn-outline" style="padding:4px; font-size:11px;" onclick="deleteStaff('${role}', '${name}')">Hapus</button></td></tr>`; });
+                if(staffList[role]) staffList[role].forEach(name => { trHtml += `<tr><td style="font-weight:700;">${name}</td><td>${role}</td><td><button class="btn btn-outline" style="padding:4px; font-size:11px;" onclick="deleteStaff('${role}', '${name}')">Hapus</button></td></tr>`; });
             }
-            if (!has) html = `<tr><td colspan="3" style="text-align:center;">Kosong.</td></tr>`;
-            tbody.innerHTML = html;
+            tbody.innerHTML = trHtml || `<tr><td colspan="3" style="text-align:center;">Kosong.</td></tr>`;
             updateCartUI(); 
         }
         function addStaff() {
@@ -908,33 +793,33 @@
         function fetchProductsFromFirebase() {
             document.getElementById('syncMenuStatus').innerText = "🔄 Syncing...";
             db.ref('menus').on('value', (snapshot) => {
-                products = []; const data = snapshot.val();
+                let fbProducts = []; const data = snapshot.val();
                 if(data) {
                     for(let id in data) {
                         let menu = data[id];
-                        if (!menu.dihapus) {
-                            products.push({ id: id, name: menu.nama, price: menu.harga, category: menu.kategori ? (menu.kategori.charAt(0).toUpperCase() + menu.kategori.slice(1)) : 'Lainnya', reqStaff: menu.reqStaff || 'Kitchen', tersedia: menu.tersedia });
-                        }
+                        if (!menu.dihapus) fbProducts.push({ id: id, name: menu.nama, price: menu.harga, category: menu.kategori ? (menu.kategori.charAt(0).toUpperCase() + menu.kategori.slice(1)) : 'Lainnya', reqStaff: menu.reqStaff || 'Kitchen', tersedia: menu.tersedia });
                     }
                 }
+                products = fbProducts;
                 localStorage.setItem('pos_products', JSON.stringify(products)); 
                 document.getElementById('syncMenuStatus').innerText = "✅ Synced"; renderInventory(); renderPOS(currentPosFilter); 
             }, (error) => { showToast("Gagal menarik Menu", "error"); });
         }
 
         function renderInventory() {
-            let tbody = document.getElementById('inventoryTableBody'); 
+            let tbody = document.getElementById('inventoryTableBody');
             let kw = document.getElementById('searchInventory') ? document.getElementById('searchInventory').value.toLowerCase() : "";
             let fp = kw ? products.filter(p => p.name.toLowerCase().includes(kw)) : products;
-
-            if (fp.length === 0) { tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Tidak ada menu.</td></tr>`; return; }
             
-            let html = '';
-            fp.forEach(p => {
-                let statusBadge = p.tersedia !== false ? '<span style="color:var(--success); font-weight:800;">Tersedia</span>' : '<span style="color:var(--danger); font-weight:800;">Habis</span>';
-                html += `<tr><td style="font-weight: 800;">${p.name}</td><td>${p.category}</td><td style="color: var(--primary);">${formatRp(p.price)}</td><td>${statusBadge}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="editProduct('${p.id}')">Edit</button> <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteProduct('${p.id}')">Hapus</button></td></tr>`;
-            });
-            tbody.innerHTML = html;
+            let trHtml = '';
+            if (fp.length === 0) { trHtml = `<tr><td colspan="5" style="text-align:center;">Tidak ada menu.</td></tr>`; } 
+            else {
+                fp.forEach(p => {
+                    let statusBadge = p.tersedia !== false ? '<span style="color:var(--success); font-weight:800;">Tersedia</span>' : '<span style="color:var(--danger); font-weight:800;">Habis</span>';
+                    trHtml += `<tr><td style="font-weight: 800;">${p.name}</td><td>${p.category}</td><td style="color: var(--primary);">${formatRp(p.price)}</td><td>${statusBadge}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="editProduct('${p.id}')">Edit</button> <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteProduct('${p.id}')">Hapus</button></td></tr>`;
+                });
+            }
+            tbody.innerHTML = trHtml;
         }
 
         async function saveProduct() {
@@ -947,7 +832,6 @@
                 document.getElementById('invId').value=""; document.getElementById('invName').value=""; document.getElementById('invPrice').value=""; document.getElementById('invStatus').value="true";
             } catch (e) { showToast("Gagal menyimpan ke Firebase", "error"); }
         }
-
         function editProduct(id) {
             let p = products.find(x => x.id === id);
             if(p) { document.getElementById('invId').value = p.id; document.getElementById('invName').value = p.name; document.getElementById('invCategory').value = p.category; document.getElementById('invPrice').value = p.price; document.getElementById('invStaff').value = p.reqStaff; document.getElementById('invStatus').value = p.tersedia !== false ? "true" : "false"; showToast(`Mengedit: ${p.name}`, "info"); }
@@ -956,123 +840,106 @@
 
         function savePettyCash() { pettyCash = parseInt(document.getElementById('inputPettyCash').value) || 0; syncToCloud('pettyCash', pettyCash); document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash); renderRevenue(); showToast("Modal Awal diperbarui", "success"); }
         
-        // FUNGSI KOMPRESI FOTO PENGELUARAN AGAR HP TIDAK LAG
-        function compressExpensePhoto(input) {
-            if (input.files && input.files[0]) {
-                let reader = new FileReader();
-                reader.onload = function(e) {
-                    let img = new Image();
-                    img.onload = function() {
-                        let canvas = document.createElement('canvas');
-                        let ctx = canvas.getContext('2d');
-                        let maxWidth = 400; // Dikompres ke lebar 400px (Sangat Ringan)
-                        let scaleSize = maxWidth / img.width;
-                        canvas.width = maxWidth;
-                        canvas.height = img.height * scaleSize;
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        let base64str = canvas.toDataURL('image/jpeg', 0.6); // Kualitas 60%
-                        
-                        document.getElementById('expensePhotoBase64').value = base64str;
-                        document.getElementById('expensePhotoPreview').src = base64str;
-                        document.getElementById('expensePhotoPreview').style.display = 'block';
-                    }
-                    img.src = e.target.result;
-                };
-                reader.readAsDataURL(input.files[0]);
+        function addExpense() {
+            let id = document.getElementById('expenseId').value;
+            let payment = document.getElementById('expensePayment').value;
+            let category = document.getElementById('expenseCategory').value;
+            let name = document.getElementById('expenseName').value; 
+            let amount = document.getElementById('expenseAmount').value;
+            
+            if(!payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran!", "error"); return; }
+            
+            if(id) {
+                let idx = expenses.findIndex(x => x.id == id);
+                if(idx !== -1) {
+                    expenses[idx].payment = payment;
+                    expenses[idx].category = category;
+                    expenses[idx].name = name;
+                    expenses[idx].amount = parseInt(amount);
+                }
+                showToast("Pengeluaran berhasil di-update!", "success");
+            } else {
+                let todayDate = new Date().toLocaleDateString('id-ID'); 
+                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: todayDate }); 
+                showToast("Pengeluaran baru dicatat!", "success");
+            }
+            
+            syncToCloud('expenses', expenses);
+            cancelEditExpense();
+            renderExpenses(); renderRevenue(); 
+        }
+
+        function editExpense(id) {
+            let e = expenses.find(x => x.id == id);
+            if(e) {
+                document.getElementById('expenseId').value = e.id;
+                document.getElementById('expensePayment').value = e.payment || "";
+                document.getElementById('expenseCategory').value = e.category || "";
+                document.getElementById('expenseName').value = e.name;
+                document.getElementById('expenseAmount').value = e.amount;
+                document.getElementById('btnSaveExpense').innerText = "UPDATE PENGELUARAN";
+                document.getElementById('btnCancelExpense').style.display = "block";
+                showToast("Memuat mode edit...", "info");
             }
         }
 
-        function addExpense() {
-            let name = document.getElementById('expenseName').value;
-            let cat = document.getElementById('expenseCategory').value;
-            let payment = document.getElementById('expensePayment').value;
-            let amount = document.getElementById('expenseAmount').value;
-            let photo = document.getElementById('expensePhotoBase64').value; // Mengambil string base64
-
-            if(!name || !amount) { showToast("Nama dan Nominal Wajib Diisi", "error"); return; }
-            
-            let todayDate = new Date().toLocaleDateString('id-ID'); 
-            let nE = { 
-                id: Date.now(), 
-                name: name, 
-                category: cat,
-                payment: payment,
-                amount: parseInt(amount), 
-                photo: photo,
-                date: todayDate 
-            };
-            expenses.push(nE); 
-            
-            // INJEKSI CLOUD
-            localStorage.setItem('pos_expenses', JSON.stringify(expenses));
-            db.ref('pos_data/expenses/' + nE.id).set(nE);
-            
-            // Reset Form Pengeluaran
+        function cancelEditExpense() {
+            document.getElementById('expenseId').value = "";
+            document.getElementById('expensePayment').value = "";
+            document.getElementById('expenseCategory').value = "";
             document.getElementById('expenseName').value = ""; 
             document.getElementById('expenseAmount').value = ""; 
-            document.getElementById('expensePhotoInput').value = "";
-            document.getElementById('expensePhotoBase64').value = "";
-            document.getElementById('expensePhotoPreview').style.display = "none";
-            
-            renderExpenses(); renderRevenue(); 
-            showToast("Pengeluaran berhasil dicatat", "success");
+            document.getElementById('btnSaveExpense').innerText = "SIMPAN PENGELUARAN";
+            document.getElementById('btnCancelExpense').style.display = "none";
         }
         
-        function deleteExpense(id) { 
-            if(confirm("Hapus catatan pengeluaran ini?")) { 
-                expenses = expenses.filter(e => e.id !== id); 
-                // HAPUS DARI CLOUD
-                localStorage.setItem('pos_expenses', JSON.stringify(expenses));
-                db.ref('pos_data/expenses/' + id).remove();
-                renderExpenses(); renderRevenue(); showToast("Catatan Dihapus", "success"); 
-            } 
-        }
+        function deleteExpense(id) { if(confirm("Hapus catatan ini?")) { expenses = expenses.filter(e => e.id !== id); syncToCloud('expenses', expenses); renderExpenses(); renderRevenue(); showToast("Dihapus", "success"); } }
         
-        function viewExpensePhoto(base64str) {
-            let win = window.open();
-            win.document.write(`<img src="${base64str}" style="max-width:100%;">`);
-        }
-
         function renderExpenses() {
             let tbody = document.getElementById('expenseTableBody'); let total = 0;
-            let targetDate = getSelectedDate(); 
+            let targetDate = getSelectedDate(); let trHtml = '';
             
-            if(!expenses || expenses.length===0) { 
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Kosong.</td></tr>`; 
-            } else { 
+            if(!expenses || expenses.length===0) { trHtml = `<tr><td colspan="4" style="text-align:center;">Kosong.</td></tr>`; } 
+            else { 
                 let targetExpenses = expenses.filter(e => getExpenseDate(e) === targetDate); 
-                
-                if (targetExpenses.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">Belum ada pengeluaran di tanggal ini.</td></tr>`;
-                } else {
-                    let html = '';
+                if (targetExpenses.length === 0) { trHtml = `<tr><td colspan="4" style="text-align:center;">Belum ada pengeluaran di tanggal ini.</td></tr>`; } 
+                else {
                     targetExpenses.forEach(e => { 
-                        total += e.amount; 
-                        let btnFoto = e.photo ? `<button class="btn btn-primary" style="padding:4px; font-size:10px;" onclick="viewExpensePhoto('${e.photo}')">Lihat Struk</button>` : `<span style="font-size:10px; color:#ccc;">-Tidak Ada-</span>`;
-                        let catName = e.category || 'Lainnya';
-                        let payMethod = e.payment || 'Kas Tunai';
-
-                        html += `<tr>
-                                    <td style="font-weight:700;">${e.name}</td>
-                                    <td style="font-size:11px; color:var(--text-muted); line-height:1.4;"><strong>${catName}</strong><br>Via: ${payMethod}</td>
-                                    <td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td>
-                                    <td style="text-align:center;">${btnFoto}</td>
-                                    <td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px; color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button></td>
-                                </tr>`; 
+                        total += e.amount; let paymentInfo = e.payment || "-"; let catInfo = e.category || "-";
+                        trHtml += `<tr>
+                            <td style="font-size:10px;">${catInfo}<br><strong style="color:var(--info);">${paymentInfo}</strong></td>
+                            <td style="font-weight:700;">${e.name}</td>
+                            <td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td>
+                            <td>
+                                <button class="btn btn-outline" style="padding:4px 8px; font-size:11px; margin-bottom:4px; border-color:var(--info); color:var(--info);" onclick="editExpense(${e.id})">Edit</button>
+                                <button class="btn btn-outline" style="padding:4px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button>
+                            </td>
+                            </tr>`; 
                     });
-                    tbody.innerHTML = html;
                 }
             }
+            tbody.innerHTML = trHtml;
             document.getElementById('expenseTotal').innerText = formatRp(total);
         }
 
+        // ============================================================================
+        // PERBAIKAN LOGIKA MATEMATIKA OMZET: AMAN DARI ERROR NULL
+        // ============================================================================
         function renderRevenue() {
+            let tc=0, tq=0, to=0; // Total Cash, Total QRIS, Total Ojol
             let s1c=0, s1q=0, s2c=0, s2q=0, shopee=0, go=0, grab=0;
             let targetDate = getSelectedDate(); 
 
-            if(orders) {
+            if(orders && Array.isArray(orders)) {
                 orders.forEach(o => {
                     if (o.status === 'selesai' && getOrderDate(o) === targetDate) {
+                        
+                        // Hitungan untuk Laporan Akhir
+                        if (o.payment === 'Cash') tc += o.total;
+                        else if(['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += o.total;
+                        else tq += o.total;
+
+                        // Hitungan Shift & Ojol
                         if(o.payment === 'Shopeefood') shopee+=o.total;
                         else if(o.payment === 'Gofood') go+=o.total;
                         else if(o.payment === 'Grabfood') grab+=o.total;
@@ -1081,24 +948,44 @@
                     }
                 });
             }
-            document.getElementById('revShift1Cash').innerText = formatRp(s1c); document.getElementById('revShift1Qris').innerText = formatRp(s1q); document.getElementById('revShift1Total').innerText = formatRp(s1c + s1q);
-            document.getElementById('revShift2Cash').innerText = formatRp(s2c); document.getElementById('revShift2Qris').innerText = formatRp(s2q); document.getElementById('revShift2Total').innerText = formatRp(s2c + s2q);
             
-            document.getElementById('revShopee').innerText = formatRp(shopee); document.getElementById('revGo').innerText = formatRp(go); document.getElementById('revGrab').innerText = formatRp(grab);
-            document.getElementById('revOjolTotal').innerText = formatRp(shopee + go + grab);
+            // Render Shift
+            if(document.getElementById('revShift1Cash')) document.getElementById('revShift1Cash').innerText = formatRp(s1c); 
+            if(document.getElementById('revShift1Qris')) document.getElementById('revShift1Qris').innerText = formatRp(s1q); 
+            if(document.getElementById('revShift1Total')) document.getElementById('revShift1Total').innerText = formatRp(s1c + s1q);
+            if(document.getElementById('revShift2Cash')) document.getElementById('revShift2Cash').innerText = formatRp(s2c); 
+            if(document.getElementById('revShift2Qris')) document.getElementById('revShift2Qris').innerText = formatRp(s2q); 
+            if(document.getElementById('revShift2Total')) document.getElementById('revShift2Total').innerText = formatRp(s2c + s2q);
+            
+            // Render Ojol
+            if(document.getElementById('revShopee')) document.getElementById('revShopee').innerText = formatRp(shopee); 
+            if(document.getElementById('revGo')) document.getElementById('revGo').innerText = formatRp(go); 
+            if(document.getElementById('revGrab')) document.getElementById('revGrab').innerText = formatRp(grab);
+            if(document.getElementById('revOjolTotal')) document.getElementById('revOjolTotal').innerText = formatRp(shopee + go + grab);
 
-            document.getElementById('revGrandCash').innerText = formatRp(s1c + s2c); document.getElementById('revGrandNonTunai').innerText = formatRp(s1q + s2q + shopee + go + grab); 
-            document.getElementById('revGrandTotal').innerText = formatRp(s1c + s2c + s1q + s2q + shopee + go + grab);
+            // Logika Fisik (Sama persis dengan WA)
+            let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === targetDate) : [];
+            let expTotal = targetExpenses.reduce((s, e) => s + e.amount, 0);
             
-            document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash);
-            if(document.getElementById('inputPettyCash').value === "") document.getElementById('inputPettyCash').value = pettyCash;
+            let tcPetty = tc + pettyCash;
+            let actualDrawerCash = tcPetty - expTotal;
+
+            // PENGAMANAN ELEMENT HTML (Anti-Error Null)
+            if(document.getElementById('finalOmzetCash')) document.getElementById('finalOmzetCash').innerText = formatRp(tc);
+            if(document.getElementById('finalOmzetQris')) document.getElementById('finalOmzetQris').innerText = formatRp(tq);
+            if(document.getElementById('finalOmzetOjol')) document.getElementById('finalOmzetOjol').innerText = formatRp(to);
+            if(document.getElementById('finalOmzetTotal')) document.getElementById('finalOmzetTotal').innerText = formatRp(tc + tq + to);
+            if(document.getElementById('finalUangFisik')) document.getElementById('finalUangFisik').innerText = formatRp(actualDrawerCash);
+            
+            if(document.getElementById('pettyCashStatus')) document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash);
+            if(document.getElementById('inputPettyCash') && document.getElementById('inputPettyCash').value === "") document.getElementById('inputPettyCash').value = pettyCash;
         }
 
         function getReportString() {
             const dateStr = getSelectedDate();
             let tc = 0, tq = 0, to = 0; 
             
-            if(orders) {
+            if(orders && Array.isArray(orders)) {
                 orders.forEach(o => { 
                     if (o.status === 'selesai' && getOrderDate(o) === dateStr) { 
                         if (o.payment === 'Cash') tc += o.total; 
@@ -1108,106 +995,50 @@
                 });
             }
 
-            let targetExpenses = expenses ? expenses.filter(e => getExpenseDate(e) === dateStr) : [];
+            let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === dateStr) : [];
             let tcPetty = tc + pettyCash, expTotal = targetExpenses.reduce((s, e) => s + e.amount, 0); let sisa = tcPetty - expTotal;
             
             let report = `*OMZET TGL ${dateStr}*\n\nCASH: ${formatRpText(tc)}\nQRIS: ${formatRpText(tq)}\nOJOL: ${formatRpText(to)}\nTOTAL: ${formatRpText(tc+tq+to)}\n__________________________\nCASH: ${formatRpText(tc)}\nPETTY CASH: ${formatRpText(pettyCash)}\nTOTAL CASH: ${formatRpText(tcPetty)}\n__________________________\n*PENGELUARAN*\n\n`;
-            
-            if(targetExpenses.length===0) report += `(Tidak ada)\n`; else targetExpenses.forEach(e => { 
-                let pCat = e.category && e.category !== "Lainnya" ? `[${e.category}] ` : "";
-                report += `# ${pCat}${e.name} : ${formatRpText(e.amount)}\n`; 
-            });
-            
+            if(targetExpenses.length===0) report += `(Tidak ada)\n`; else targetExpenses.forEach(e => { report += `# ${e.name} : ${formatRpText(e.amount)}\n`; });
             report += `TOTAL KELUAR: ${formatRpText(expTotal)}\n_________________________\nSISA CASH (FISIK LACI): ${formatRpText(sisa)}\n\n*(${formatRpText(sisa)})*`; return report;
         }
         
         function generateReport() { navigator.clipboard.writeText(getReportString()).then(() => showToast("Laporan dicopy", "success")).catch(e => showToast("Gagal copy", "error")); }
         
         function generateRealExcelBlob() {
-            const targetDate = getSelectedDate();
-            let wb = XLSX.utils.book_new();
-
-            // 1. Data Transaksi
-            let orderData = [
-                ["LAPORAN TRANSAKSI TANGGAL", targetDate],
-                [],
-                ["ID", "Waktu", "Pemesan", "Menu Pesanan", "Shift", "Metode", "Total"]
-            ];
-            
-            if(orders) {
+            const targetDate = getSelectedDate(); let wb = XLSX.utils.book_new();
+            let orderData = [ ["LAPORAN TRANSAKSI TANGGAL", targetDate], [], ["ID", "Waktu", "Pemesan", "Menu Pesanan", "Shift", "Metode", "Total"] ];
+            if(orders && Array.isArray(orders)) {
                 orders.filter(o => o.status === 'selesai' && getOrderDate(o) === targetDate).forEach(o => {
-                    let itemsStr = o.items ? o.items.map(i => `${i.name} (x${i.qty})`).join(', ') : "-";
-                    orderData.push([o.id, o.time, o.customer, itemsStr, o.shift, o.payment, o.total]); 
+                    let itemsStr = o.items ? o.items.map(i => `${i.name} (x${i.qty})`).join(', ') : "-"; orderData.push([o.id, o.time, o.customer, itemsStr, o.shift, o.payment, o.total]); 
                 });
             }
-            let wsOrders = XLSX.utils.aoa_to_sheet(orderData);
-            XLSX.utils.book_append_sheet(wb, wsOrders, "Transaksi");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orderData), "Transaksi");
 
-            // 2. Data Pengeluaran Terupdate
-            let expenseData = [
-                ["LAPORAN PENGELUARAN TANGGAL", targetDate],
-                [],
-                ["Keterangan", "Kategori", "Sumber Dana", "Nominal"]
-            ];
-            
-            if(expenses) {
-                expenses.filter(e => getExpenseDate(e) === targetDate).forEach(e => {
-                    expenseData.push([e.name, (e.category || "Lainnya"), (e.payment || "Kas Tunai"), e.amount]);
-                });
+            let expenseData = [ ["LAPORAN PENGELUARAN TANGGAL", targetDate], [], ["Kategori", "Pembayaran", "Nama Pengeluaran", "Nominal"] ];
+            if(expenses && Array.isArray(expenses)) {
+                expenses.filter(e => getExpenseDate(e) === targetDate).forEach(e => { expenseData.push([e.category||"-", e.payment||"-", e.name, e.amount]); });
             }
-            let wsExpenses = XLSX.utils.aoa_to_sheet(expenseData);
-            XLSX.utils.book_append_sheet(wb, wsExpenses, "Pengeluaran");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expenseData), "Pengeluaran");
 
             let wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
             return new Blob([wbout], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
         }
 
         function downloadExcel() {
-            let targetDate = getSelectedDate();
-            let blob = generateRealExcelBlob();
-            let link = document.createElement('a'); 
-            link.href = URL.createObjectURL(blob); 
-            link.download = `Omzet_${targetDate.replace(/\//g, '-')}.xlsx`; 
-            document.body.appendChild(link); 
-            link.click(); 
-            document.body.removeChild(link); 
+            let targetDate = getSelectedDate(); let blob = generateRealExcelBlob(); let link = document.createElement('a'); 
+            link.href = URL.createObjectURL(blob); link.download = `Omzet_${targetDate.replace(/\//g, '-')}.xlsx`; 
+            document.body.appendChild(link); link.click(); document.body.removeChild(link); 
         }
 
-        // FUNGSI SHARE NATIVE KE WHATSAPP 
         async function shareExcelToWA() { 
-            const targetDate = getSelectedDate();
-            const dateStr = targetDate.replace(/\//g, '-');
-            const textReport = getReportString();
-            
-            const blob = generateRealExcelBlob();
-            const file = new File([blob], `Omzet_${dateStr}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-
+            const targetDate = getSelectedDate(); const dateStr = targetDate.replace(/\//g, '-'); const textReport = getReportString();
+            const file = new File([generateRealExcelBlob()], `Omzet_${dateStr}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                try {
-                    await navigator.share({
-                        files: [file],
-                        title: `Laporan Omzet ${dateStr}`,
-                        text: textReport
-                    });
-                    showToast("Membuka menu Share...", "info");
-                    return; 
-                } catch (error) {
-                    console.log("Share dibatalkan atau gagal:", error);
-                }
-            } else {
-                showToast("Sistem ini butuh bantuan manual.", "warning");
-            }
-
+                try { await navigator.share({ files: [file], title: `Laporan Omzet ${dateStr}`, text: textReport }); showToast("Membuka menu Share...", "info"); return; } catch (error) { }
+            } else { showToast("Sistem ini butuh bantuan manual.", "warning"); }
             downloadExcel();
-            setTimeout(() => {
-                let encodedText = encodeURIComponent(textReport);
-                let waUrl = `https://api.whatsapp.com/send?text=${encodedText}`;
-                try {
-                    window.open(waUrl, '_blank');
-                } catch (e) {
-                    showToast("Gagal membuka WhatsApp.", "error");
-                }
-            }, 1500); 
+            setTimeout(() => { try { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(textReport)}`, '_blank'); } catch (e) { showToast("Gagal buka WA.", "error"); } }, 1500); 
         }
 
         function previewLogo(input) { if (input.files && input.files[0]) { let reader = new FileReader(); reader.onload = function(e) { settings.logoBase64 = e.target.result; document.getElementById('logoPreview').src = e.target.result; document.getElementById('logoPreview').style.display = 'inline-block'; syncToCloud('settings', settings); showToast("Logo diperbarui", "success"); }; reader.readAsDataURL(input.files[0]); } }
@@ -1216,31 +1047,59 @@
             document.getElementById('setStoreName').value = settings.storeName || ""; 
             document.getElementById('setFooter').value = settings.footer || ""; 
             document.getElementById('btAutoPrint').checked = settings.btAutoPrint !== false; 
-            document.getElementById('setWebhookUrl').value = settings.webhookUrl || ""; 
-            if(settings.logoBase64) { 
-                document.getElementById('logoPreview').src = settings.logoBase64; 
-                document.getElementById('logoPreview').style.display = 'inline-block'; 
-            } 
+            document.getElementById('setWebhookUrl').value = settings.webhookUrl || "";
+            if(settings.logoBase64) { document.getElementById('logoPreview').src = settings.logoBase64; document.getElementById('logoPreview').style.display = 'inline-block'; } 
         }
         
         function saveStoreSettings() { 
-            settings.storeName = document.getElementById('setStoreName').value; 
-            settings.footer = document.getElementById('setFooter').value; 
-            settings.webhookUrl = document.getElementById('setWebhookUrl').value;
-            syncToCloud('settings', settings); 
-            renderPOS(currentPosFilter); 
-            showToast("Pengaturan Tersimpan", "success"); 
+            settings.storeName = document.getElementById('setStoreName').value; settings.footer = document.getElementById('setFooter').value; settings.webhookUrl = document.getElementById('setWebhookUrl').value;
+            syncToCloud('settings', settings); renderPOS(currentPosFilter); showToast("Pengaturan Disimpan", "success"); 
         }
         
         function updateAutoPrintSetting(isChecked) { settings.btAutoPrint = isChecked; syncToCloud('settings', settings); showToast(isChecked ? "Auto-Print On" : "Auto-Print Off", "info"); }
 
-        /* BLUETOOTH PRINTER FUNCTIONS */
+        // ============================================================================
+        // FITUR KUNCI SINKRONISASI KE GOOGLE SHEETS
+        // ============================================================================
+        async function syncToSheets() {
+            // CEK SANDI SINKRONISASI
+            if (settings.portalPins && settings.portalPins.sync) {
+                let inputPin = prompt("Masukkan Sandi Sinkronisasi Sheets:");
+                if (inputPin === null) return; // User menekan tombol 'Batal'
+                if (inputPin !== settings.portalPins.sync) {
+                    showToast("Sandi Sinkronisasi Salah!", "error");
+                    return;
+                }
+            }
+
+            const url = settings.webhookUrl;
+            if (!url) { showToast("URL Webhook belum diisi di Pengaturan!", "error"); return; }
+            showToast("⏳ SINKRONISASI BERJALAN...", "info");
+            
+            let targetDate = getSelectedDate();
+            let tc = 0, tq = 0, to = 0; 
+            if(orders && Array.isArray(orders)) {
+                orders.forEach(o => {
+                    if (o.status === 'selesai' && getOrderDate(o) === targetDate) {
+                        if (o.payment === 'Cash') tc += o.total; 
+                        else if(['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += o.total; 
+                        else tq += o.total; 
+                    }
+                });
+            }
+            try {
+                await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
+                let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === targetDate) : [];
+                for (let e of targetExpenses) { await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "pengeluaran", date: targetDate, payment: e.payment, category: e.category, name: e.name, amount: e.amount }) }); }
+                showToast("Sinkronisasi Selesai!", "success");
+            } catch (err) { showToast("Gagal terhubung ke Sheets", "error"); }
+        }
+
         async function writeBluetoothData(characteristic, bufferArray) { const CHUNK = 100; for (let i=0; i<bufferArray.length; i+=CHUNK) { await characteristic.writeValue(bufferArray.slice(i, i+CHUNK)); await new Promise(r => setTimeout(r, 20)); } }
         async function getESCPOSImage(base64str) {
             return new Promise((resolve) => {
                 let img = new Image(); img.onload = () => {
-                    let canvas = document.createElement('canvas'); let ctx = canvas.getContext('2d');
-                    let width = 200; let height = Math.round((width * img.height) / img.width);
+                    let canvas = document.createElement('canvas'); let ctx = canvas.getContext('2d'); let width = 200; let height = Math.round((width * img.height) / img.width);
                     canvas.width = width; canvas.height = height; ctx.fillStyle = "white"; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height);
                     let imgData = ctx.getImageData(0, 0, width, height).data; let bytesWidth = Math.ceil(width / 8); let buffer = new Uint8Array(8 + (bytesWidth * height));
                     buffer[0]=0x1D; buffer[1]=0x76; buffer[2]=0x30; buffer[3]=0x00; buffer[4]=bytesWidth&0xFF; buffer[5]=(bytesWidth>>8)&0xFF; buffer[6]=height&0xFF; buffer[7]=(height>>8)&0xFF;
@@ -1260,21 +1119,21 @@
         function testPrint() { executePrint({ id: "TEST", time: getTimestamp(), customer: "TEST", subtotal: 10000, discount: 0, total: 10000, shift: settings.activeShift, payment: "TEST", items: [{name: "Item Test", qty: 1, price: 10000}] }); showToast("Test print dikirim", "info"); }
 
         function renderPOS(filter = currentPosFilter) {
-            currentPosFilter = filter; const catContainer = document.getElementById('categoryFilters'); catContainer.innerHTML = `<button class="tab-btn ${filter==='Semua'?'active':''}" onclick="renderPOS('Semua')">Semua</button>`;
-            [...new Set(products.map(p => p.category))].sort().forEach(c => { catContainer.innerHTML += `<button class="tab-btn ${filter===c?'active':''}" onclick="renderPOS('${c}')">${c}</button>`; });
-            const grid = document.getElementById('productGrid'); 
+            currentPosFilter = filter; const catContainer = document.getElementById('categoryFilters'); 
+            let catHtml = `<button class="tab-btn ${filter==='Semua'?'active':''}" onclick="renderPOS('Semua')">Semua</button>`;
+            [...new Set(products.map(p => p.category))].sort().forEach(c => { catHtml += `<button class="tab-btn ${filter===c?'active':''}" onclick="renderPOS('${c}')">${c}</button>`; });
+            catContainer.innerHTML = catHtml;
+
+            const grid = document.getElementById('productGrid'); let gridHtml = '';
             let filtered = filter === 'Semua' ? products : products.filter(p => p.category === filter);
             let kw = document.getElementById('searchPosMenu') ? document.getElementById('searchPosMenu').value.toLowerCase() : "";
             if (kw) filtered = filtered.filter(p => p.name.toLowerCase().includes(kw));
-            if(filtered.length === 0) { grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">Menu tidak ditemukan.</div>'; return; }
-            
-            let html = '';
-            filtered.forEach(p => {
-                if(p.tersedia === false) html += `<div class="product-card habis"><div class="product-name">${p.name} <span style="color:red; font-size:11px;"><br>(HABIS)</span></div><div class="product-price">${formatRp(p.price)}</div></div>`;
-                else html += `<div class="product-card" onclick="addToCart('${p.id}')"><div class="product-name">${p.name}</div><div class="product-price">${formatRp(p.price)}</div></div>`;
+            if(filtered.length === 0) gridHtml = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">Menu tidak ditemukan.</div>';
+            else filtered.forEach(p => {
+                if(p.tersedia === false) gridHtml += `<div class="product-card habis"><div class="product-name">${p.name} <span style="color:red; font-size:11px;"><br>(HABIS)</span></div><div class="product-price">${formatRp(p.price)}</div></div>`;
+                else gridHtml += `<div class="product-card" onclick="addToCart('${p.id}')"><div class="product-name">${p.name}</div><div class="product-price">${formatRp(p.price)}</div></div>`;
             }); 
-            grid.innerHTML = html;
-            updateCartUI();
+            grid.innerHTML = gridHtml; updateCartUI();
         }
 
         function addToCart(productId) {
@@ -1283,56 +1142,31 @@
         }
 
         function updateCartUI() {
-            let container = document.getElementById('cartItems'); 
-            let subtotal = 0; 
-            
+            let container = document.getElementById('cartItems'); let subtotal = 0; let cHtml = '';
             document.getElementById('cartTitle').innerText = editingOrderId ? `Mengedit: ${editingOrderId}` : 'Pesanan Baru';
-            
-            let html = '';
             cart.forEach((item, index) => {
-                subtotal += item.price * item.qty; 
-                let staffOpts = `<option value="">- Petugas -</option>`;
+                subtotal += item.price * item.qty; let staffOpts = `<option value="">- Petugas -</option>`;
                 if(staffList[item.reqStaff]) staffList[item.reqStaff].forEach(s => { staffOpts += `<option value="${s}" ${item.assignedTo===s?'selected':''}>${s}</option>`; });
-                html += `<div class="cart-item"><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><strong style="font-size:13px;">${item.name}</strong><strong style="color:var(--primary);">${formatRp(item.price * item.qty)}</strong></div><input type="text" class="cart-item-note" placeholder="Catatan" value="${item.note||""}" onchange="cart[${index}].note = this.value"><div style="display:flex; justify-content:space-between;"><div class="qty-control"><button class="qty-btn" onclick="cart[${index}].qty--; if(cart[${index}].qty<=0)cart.splice(${index},1); updateCartUI();">-</button><span style="font-weight:900; width:15px; text-align:center;">${item.qty}</span><button class="qty-btn" onclick="cart[${index}].qty++; updateCartUI();">+</button></div><select onchange="cart[${index}].assignedTo = this.value" style="padding:6px; border-radius:6px; font-size:11px;">${staffOpts}</select></div></div>`;
+                cHtml += `<div class="cart-item"><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><strong style="font-size:13px;">${item.name}</strong><strong style="color:var(--primary);">${formatRp(item.price * item.qty)}</strong></div><input type="text" class="cart-item-note" placeholder="Catatan" value="${item.note||""}" onchange="cart[${index}].note = this.value"><div style="display:flex; justify-content:space-between;"><div class="qty-control"><button class="qty-btn" onclick="cart[${index}].qty--; if(cart[${index}].qty<=0)cart.splice(${index},1); updateCartUI();">-</button><span style="font-weight:900; width:15px; text-align:center;">${item.qty}</span><button class="qty-btn" onclick="cart[${index}].qty++; updateCartUI();">+</button></div><select onchange="cart[${index}].assignedTo = this.value" style="padding:6px; border-radius:6px; font-size:11px;">${staffOpts}</select></div></div>`;
             });
-            container.innerHTML = html;
-            
+            container.innerHTML = cHtml;
             document.getElementById('cartSubtotal').innerText = formatRp(subtotal);
+            let discType = document.getElementById('discountType').value; let discVal = parseFloat(document.getElementById('discountValue').value) || 0; let discountAmt = 0;
+            if (discType === '%') discountAmt = subtotal * (discVal / 100); else discountAmt = discVal;
+            if (discountAmt > subtotal) discountAmt = subtotal; let finalTotal = subtotal - discountAmt;
             
-            let discType = document.getElementById('discountType').value;
-            let discVal = parseFloat(document.getElementById('discountValue').value) || 0;
-            let discountAmt = 0;
-            
-            if (discType === '%') {
-                discountAmt = subtotal * (discVal / 100);
-            } else {
-                discountAmt = discVal;
-            }
-            
-            if (discountAmt > subtotal) discountAmt = subtotal; 
-            
-            let finalTotal = subtotal - discountAmt;
-            
-            document.getElementById('cartDiscount').innerText = "- " + formatRp(discountAmt);
-            document.getElementById('cartTotal').innerText = formatRp(finalTotal);
-            
-            window.currentSubtotal = subtotal;
-            window.currentDiscount = discountAmt;
-            window.currentFinalTotal = finalTotal;
+            document.getElementById('cartDiscount').innerText = "- " + formatRp(discountAmt); document.getElementById('cartTotal').innerText = formatRp(finalTotal);
+            window.currentSubtotal = subtotal; window.currentDiscount = discountAmt; window.currentFinalTotal = finalTotal;
         }
 
         function filterHistory(status, btn=null) {
             window.currentHistoryFilter = status;
             if(btn) { document.querySelectorAll('#page-history .tab-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
-            let tbody = document.getElementById('historyTableBody'); 
+            let tbody = document.getElementById('historyTableBody'); let trHtml = '';
             
-            if(orders && orders.length > 0) {
-                // Limit ke 150 transaksi terbaru untuk menghindari lag pada DOM
+            if(orders && Array.isArray(orders) && orders.length > 0) {
                 let filtered = [...orders].reverse().filter(o => o.status === status);
-                let displayOrders = filtered.slice(0, 150);
-                let html = '';
-                
-                displayOrders.forEach(o => {
+                filtered.forEach(o => {
                     let badge = '';
                     if (o.status === 'pending') badge = '<span style="color:var(--warning)">🟠 Gantung</span>';
                     else if (o.status === 'batal') badge = '<span style="color:var(--danger)">❌ Dibatalkan</span>';
@@ -1343,70 +1177,28 @@
                     else if (o.payment === 'Grabfood') badge = '<span style="color:var(--grab)">🛵 GrabFood</span>';
 
                     let act = '';
-                    if (o.status === 'pending') {
-                        act = `<button class="btn btn-warning" style="padding:6px; font-size:11px; margin-right:5px;" onclick="editOrder('${o.id}')">✏️ Edit/Bayar</button>
-                               <button class="btn btn-danger" style="padding:6px; font-size:11px;" onclick="cancelOrder('${o.id}', 'pending')">❌ Batal</button>`;
-                    } else if (o.status === 'selesai') {
-                        act = `<button class="btn btn-outline" style="padding:6px; font-size:11px; margin-right:5px;" onclick="reprintOrder('${o.id}')">🖨️ Cetak</button>
-                               <button class="btn btn-danger" style="padding:6px; font-size:11px;" onclick="cancelOrder('${o.id}', 'selesai')">❌ Batal</button>`;
-                    } else if (o.status === 'batal') {
-                        act = `<span style="font-weight:bold; font-size:11px; color:var(--danger); display:block; margin-bottom:5px;">Dibatalkan</span>
-                               <button class="btn btn-outline" style="padding:4px 8px; font-size:10px; border-color:var(--danger); color:var(--danger);" onclick="deleteOrderPermanently('${o.id}')">🗑️ Hapus Permanen</button>`;
-                    }
+                    if (o.status === 'pending') { act = `<button class="btn btn-warning" style="padding:6px; font-size:11px; margin-right:5px;" onclick="editOrder('${o.id}')">✏️ Edit/Bayar</button><button class="btn btn-danger" style="padding:6px; font-size:11px;" onclick="cancelOrder('${o.id}', 'pending')">❌ Batal</button>`; } 
+                    else if (o.status === 'selesai') { act = `<button class="btn btn-outline" style="padding:6px; font-size:11px; margin-right:5px;" onclick="reprintOrder('${o.id}')">🖨️ Cetak</button><button class="btn btn-danger" style="padding:6px; font-size:11px;" onclick="cancelOrder('${o.id}', 'selesai')">❌ Batal</button>`; } 
+                    else if (o.status === 'batal') { act = `<span style="font-weight:bold; font-size:11px; color:var(--danger); display:block; margin-bottom:5px;">Dibatalkan</span><button class="btn btn-outline" style="padding:4px 8px; font-size:10px; border-color:var(--danger); color:var(--danger);" onclick="deleteOrderPermanently('${o.id}')">🗑️ Hapus Permanen</button>`; }
                     
                     let stempel = getOrderDate(o) + "<br>" + o.time;
-                    
-                    let itemsList = "";
-                    if (o.items && o.items.length > 0) {
-                        itemsList = o.items.map(i => `- ${i.name} (x${i.qty})`).join('<br>');
-                    } else {
-                        itemsList = "-";
-                    }
-
-                    html += `<tr><td>${o.id}</td><td>${stempel}</td><td>${o.customer}</td><td style="font-size:11px; color:var(--text-main); font-weight:600; line-height:1.4;">${itemsList}</td><td style="font-weight:800;">${badge}</td><td style="font-weight:900; color:var(--primary);">${formatRp(o.total)}</td><td>${act}</td></tr>`;
+                    let itemsList = (o.items && o.items.length > 0) ? o.items.map(i => `- ${i.name} (x${i.qty})`).join('<br>') : "-";
+                    trHtml += `<tr><td>${o.id}</td><td>${stempel}</td><td>${o.customer}</td><td style="font-size:11px; color:var(--text-main); font-weight:600; line-height:1.4;">${itemsList}</td><td style="font-weight:800;">${badge}</td><td style="font-weight:900; color:var(--primary);">${formatRp(o.total)}</td><td>${act}</td></tr>`;
                 });
-                
-                if (filtered.length > 150) {
-                    html += `<tr><td colspan="7" style="text-align:center; padding:15px; color:var(--text-muted); font-size:11px;">Menampilkan 150 transaksi terbaru untuk menjaga performa aplikasi. Total data di kategori ini: ${filtered.length}</td></tr>`;
-                }
-                tbody.innerHTML = html;
-            } else {
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Belum ada riwayat.</td></tr>`;
             }
+            tbody.innerHTML = trHtml || `<tr><td colspan="7" style="text-align:center;">Belum ada riwayat.</td></tr>`;
         }
 
         function deleteOrderPermanently(id) {
-            if(confirm("Yakin ingin menghapus pesanan ini secara PERMANEN dari database?")) {
-                orders = orders.filter(o => o.id !== id);
-                // HAPUS INJEKSI
-                localStorage.setItem('pos_orders', JSON.stringify(orders));
-                db.ref('pos_data/orders/' + id).remove();
-                
-                showToast("Pesanan dihapus permanen!", "success");
-                renderRevenue();
-                filterHistory(window.currentHistoryFilter);
-            }
+            if(confirm("Yakin menghapus pesanan ini secara PERMANEN?")) { orders = orders.filter(o => o.id !== id); syncToCloud('orders', orders); showToast("Pesanan dihapus permanen!", "success"); renderRevenue(); filterHistory(window.currentHistoryFilter); }
         }
 
         function editOrder(id) { 
-            let o = orders.find(x => x.id === id && x.status === 'pending'); 
-            if(!o) o = orders.find(x => x.id === id); 
-            
+            let o = orders.find(x => x.id === id && x.status === 'pending'); if(!o) o = orders.find(x => x.id === id); 
             if(o) { 
-                cart = JSON.parse(JSON.stringify(o.items)); 
-                editingOrderId = o.id; 
-                document.getElementById('orderNote').value = o.customer; 
-
-                if (o.discount && o.discount > 0) {
-                    document.getElementById('discountType').value = 'Rp';
-                    document.getElementById('discountValue').value = o.discount;
-                } else {
-                    document.getElementById('discountValue').value = "";
-                }
-
-                switchPage('pos'); 
-                renderPOS(currentPosFilter); 
-                showToast("Pesanan dimuat", "info"); 
+                cart = JSON.parse(JSON.stringify(o.items)); editingOrderId = o.id; document.getElementById('orderNote').value = o.customer; 
+                if (o.discount && o.discount > 0) { document.getElementById('discountType').value = 'Rp'; document.getElementById('discountValue').value = o.discount; } else document.getElementById('discountValue').value = "";
+                switchPage('pos'); renderPOS(currentPosFilter); showToast("Pesanan dimuat", "info"); 
             } 
         }
         
@@ -1414,120 +1206,44 @@
         
         function printCurrentCart() { 
             if(cart.length===0){showToast("Keranjang kosong!", "error"); return;} 
-            executePrint({
-                id: editingOrderId || "SMENTARA", 
-                time: getTimestamp(), 
-                customer: document.getElementById('orderNote').value || "-", 
-                subtotal: window.currentSubtotal,
-                discount: window.currentDiscount,
-                total: window.currentFinalTotal, 
-                shift: settings.activeShift, 
-                payment: "BELUM BAYAR", 
-                items: [...cart]
-            }); 
+            executePrint({ id: editingOrderId || "SMENTARA", time: getTimestamp(), customer: document.getElementById('orderNote').value || "-", subtotal: window.currentSubtotal, discount: window.currentDiscount, total: window.currentFinalTotal, shift: settings.activeShift, payment: "BELUM BAYAR", items: [...cart] }); 
             showToast("Mencetak Sementara...", "info"); 
         }
 
         function cancelOrder(id, currentStatus) {
-            const code = prompt("Masukkan Kode Rahasia untuk membatalkan pesanan:");
+            const code = prompt("Masukkan Kode Rahasia pembatalan:");
             if (code === "2006UDC") { 
-                let idx = orders.findIndex(o => o.id === id && o.status === currentStatus);
-                if(idx === -1) idx = orders.findIndex(o => o.id === id); 
-
-                if(idx !== -1) {
-                    orders[idx].status = 'batal';
-                    
-                    // UPDATE INJEKSI
-                    localStorage.setItem('pos_orders', JSON.stringify(orders));
-                    db.ref('pos_data/orders/' + orders[idx].id).update({ status: 'batal' });
-                    
-                    showToast("Pesanan dibatalkan!", "success"); 
-                    renderRevenue();
-                    filterHistory(currentStatus); 
-                }
-            } 
-            else if (code !== null) showToast("Kode rahasia salah!", "error");
+                if (confirm("Yakin ingin membatalkan?")) { 
+                    let idx = orders.findIndex(o => o.id === id && o.status === currentStatus); if(idx === -1) idx = orders.findIndex(o => o.id === id); 
+                    if(idx !== -1) { orders[idx].status = 'batal'; syncToCloud('orders', orders); showToast("Pesanan dibatalkan!", "success"); renderRevenue(); filterHistory(currentStatus); }
+                } 
+            } else if (code !== null) showToast("Kode rahasia salah!", "error");
         }
 
         function saveOrder(status, paymentMethod) {
-            if(cart.length === 0) { showToast("Keranjang masih kosong!", "error"); return; }
-            
-            let cust = document.getElementById('orderNote').value || "-";
-            let subtotal = window.currentSubtotal || 0;
-            let discount = window.currentDiscount || 0;
-            let total = window.currentFinalTotal || 0;
-            let todayDate = new Date().toLocaleDateString('id-ID'); 
-            
+            if(cart.length === 0) { showToast("Keranjang kosong!", "error"); return; }
+            let cust = document.getElementById('orderNote').value || "-"; let subtotal = window.currentSubtotal || 0; let discount = window.currentDiscount || 0; let total = window.currentFinalTotal || 0; let todayDate = new Date().toLocaleDateString('id-ID'); 
             if(!orders) orders = [];
             
             if(editingOrderId) { 
-                let idx = orders.findIndex(o => o.id === editingOrderId && o.status === 'pending'); 
-                if(idx === -1) idx = orders.findIndex(o => o.id === editingOrderId); 
-                
-                if(idx !== -1) { 
-                    orders[idx].items = [...cart]; 
-                    orders[idx].subtotal = subtotal; 
-                    orders[idx].discount = discount; 
-                    orders[idx].total = total; 
-                    orders[idx].customer = cust; 
-                    orders[idx].status = status; 
-                    orders[idx].payment = paymentMethod; 
-                    
-                    // INJEKSI UPDATE CLOUD
-                    localStorage.setItem('pos_orders', JSON.stringify(orders));
-                    db.ref('pos_data/orders/' + orders[idx].id).set(orders[idx]);
-
-                    if(status === 'selesai') executePrint(orders[idx]); 
-                } 
+                let idx = orders.findIndex(o => o.id === editingOrderId && o.status === 'pending'); if(idx === -1) idx = orders.findIndex(o => o.id === editingOrderId); 
+                if(idx !== -1) { orders[idx].items = [...cart]; orders[idx].subtotal = subtotal; orders[idx].discount = discount; orders[idx].total = total; orders[idx].customer = cust; orders[idx].status = status; orders[idx].payment = paymentMethod; if(status === 'selesai') executePrint(orders[idx]); } 
             } else { 
                 let uniqueId = 'ORD-' + Date.now().toString(36).toUpperCase();
-                let nO = { 
-                    id: uniqueId, 
-                    time: getTimestamp(), 
-                    date: todayDate, 
-                    customer: cust, 
-                    subtotal: subtotal,
-                    discount: discount,
-                    total: total, 
-                    status: status, 
-                    shift: settings.activeShift, 
-                    payment: paymentMethod, 
-                    items: [...cart] 
-                }; 
-                orders.push(nO); 
-                
-                // INJEKSI PUSH CLOUD
-                localStorage.setItem('pos_orders', JSON.stringify(orders));
-                db.ref('pos_data/orders/' + uniqueId).set(nO);
-
-                if(status === 'selesai' || document.getElementById('btAutoPrint').checked) executePrint(nO); 
+                let nO = { id: uniqueId, time: getTimestamp(), date: todayDate, customer: cust, subtotal: subtotal, discount: discount, total: total, status: status, shift: settings.activeShift, payment: paymentMethod, items: [...cart] }; 
+                orders.push(nO); if(status === 'selesai' || document.getElementById('btAutoPrint').checked) executePrint(nO); 
             }
-            
-            cart = []; 
-            document.getElementById('orderNote').value = ""; 
-            document.getElementById('discountValue').value = ""; 
-            editingOrderId = null; 
-            renderPOS(currentPosFilter); 
-            renderRevenue(); 
-            
-            if (status === 'selesai') showToast(`Pembayaran ${paymentMethod} Berhasil!`, "success"); 
-            else showToast("Pesanan digantung", "info");
+            syncToCloud('orders', orders); cart = []; document.getElementById('orderNote').value = ""; document.getElementById('discountValue').value = ""; editingOrderId = null; renderPOS(currentPosFilter); renderRevenue(); 
+            if (status === 'selesai') showToast(`Pembayaran ${paymentMethod} Berhasil!`, "success"); else showToast("Pesanan digantung", "info");
         }
 
-        /* LOGIKA PRINT TERARAH LANGSUNG BLUETOOTH */
         async function executePrint(order, isIncomingWebOrder = false) {
             if(!document.getElementById('btAutoPrint').checked && order.id !== 'TEST' && order.id !== 'SMENTARA' && order.status !== 'selesai' && !isIncomingWebOrder) return;
-            
             let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name; let success = false;
-            
             let printTotalsText = `--------------------------------\n`;
-            if (order.discount && order.discount > 0) {
-                printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\n`;
-                printTotalsText += `DISKON      : -Rp ${formatRpText(order.discount)}\n`;
-            }
+            if (order.discount && order.discount > 0) { printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\nDISKON      : -Rp ${formatRpText(order.discount)}\n`; }
             printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\nMETODE BAYAR: ${order.payment.toUpperCase()}\n--------------------------------\n`;
 
-            // 1. Coba Print ke Printer Kasir 
             if (printerKasirCharacteristic) {
                 try {
                     if (settings.logoBase64) { let img = await getESCPOSImage(settings.logoBase64); await writeBluetoothData(printerKasirCharacteristic, img); }
@@ -1537,8 +1253,6 @@
                     await writeBluetoothData(printerKasirCharacteristic, new TextEncoder().encode(txt)); success = true;
                 } catch (e) { console.log(e); }
             }
-            
-            // 2. Coba Print ke Printer Dapur 
             if (printerDapurCharacteristic) {
                 try {
                     let txt = "\x1B\x40\x1B\x61\x01" + `*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`; 
@@ -1547,22 +1261,14 @@
                     await writeBluetoothData(printerDapurCharacteristic, new TextEncoder().encode(txt)); success = true;
                 } catch (e) { console.log(e); }
             }
-            
-            // 3. Fallback Web Print
             if (!success) {
-                showToast("Bluetooth belum terkoneksi! Mengalihkan ke mode print layar browser...", "warning");
+                showToast("Bluetooth belum terkoneksi! Mengalihkan ke print layar browser...", "warning");
                 let p = document.getElementById('printReceiptArea'); let lh = settings.logoBase64 ? `<img src="${settings.logoBase64}" style="max-width:150px; display:block; margin: 0 auto 10px auto;">` : '';
                 let html = `<div class="print-center">${lh}<strong style="font-size:16px;">${settings.storeName}</strong><br>${order.time} | ID: ${order.id}<br>Kasir: ${cName}</div><div class="print-divider"></div><div>Pemesan: ${order.customer}</div><div class="print-divider"></div>`;
                 order.items.forEach(i => { let st = i.assignedTo ? ` [${i.assignedTo}]` : ''; let no = i.note ? `<br><span class="print-note">*Catatan: ${i.note}</span>` : ''; html += `<div class="print-flex" style="align-items:start;"><span>${i.name}${st} (x${i.qty})${no}</span><span>${formatRp(i.price * i.qty)}</span></div>`; });
-                
                 html += `<div class="print-divider"></div>`;
-                if (order.discount && order.discount > 0) {
-                    html += `<div class="print-flex"><span style="font-size:12px;">Subtotal</span><span style="font-size:12px;">${formatRp(order.subtotal || (order.total + order.discount))}</span></div>`;
-                    html += `<div class="print-flex"><span style="font-size:12px;">Diskon</span><span style="font-size:12px;">-${formatRp(order.discount)}</span></div>`;
-                }
-                
-                let ft = settings.footer.replace(/\n/g, '<br>'); 
-                html += `<div class="print-flex"><strong style="font-size:14px;">TOTAL</strong><strong style="font-size:14px;">${formatRp(order.total)}</strong></div><div class="print-flex"><span style="font-size:12px;">Status/Metode</span><span style="font-size:12px; font-weight:bold;">${order.payment.toUpperCase()}</span></div><div class="print-divider"></div><div class="print-center" style="margin-top:10px;">${ft}</div>`;
+                if (order.discount && order.discount > 0) { html += `<div class="print-flex"><span style="font-size:12px;">Subtotal</span><span style="font-size:12px;">${formatRp(order.subtotal || (order.total + order.discount))}</span></div><div class="print-flex"><span style="font-size:12px;">Diskon</span><span style="font-size:12px;">-${formatRp(order.discount)}</span></div>`; }
+                let ft = settings.footer.replace(/\n/g, '<br>'); html += `<div class="print-flex"><strong style="font-size:14px;">TOTAL</strong><strong style="font-size:14px;">${formatRp(order.total)}</strong></div><div class="print-flex"><span style="font-size:12px;">Status/Metode</span><span style="font-size:12px; font-weight:bold;">${order.payment.toUpperCase()}</span></div><div class="print-divider"></div><div class="print-center" style="margin-top:10px;">${ft}</div>`;
                 p.innerHTML = html; p.style.display = 'block'; window.print(); p.style.display = 'none';
             }
         }
@@ -1570,20 +1276,16 @@
         function setTodayDate() {
             let tzoffset = (new Date()).getTimezoneOffset() * 60000;
             let localISOTime = (new Date(Date.now() - tzoffset)).toISOString().split('T')[0];
-            if(document.getElementById('revenueDate')) {
-                document.getElementById('revenueDate').value = localISOTime;
-            }
+            if(document.getElementById('revenueDate')) document.getElementById('revenueDate').value = localISOTime;
         }
 
         window.onload = function() { 
-            setTodayDate();
-            renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings();
-            renderRevenue(); renderExpenses(); filterHistory(window.currentHistoryFilter); updateSidebarCashier();
-            renderInventory(); renderPOS(currentPosFilter);
+            setTodayDate(); 
+            renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings(); 
+            renderRevenue(); renderExpenses(); filterHistory(window.currentHistoryFilter); 
+            updateSidebarCashier(); renderInventory(); renderPOS(currentPosFilter);
             
-            fetchPosDataFromFirebase(); 
-            fetchProductsFromFirebase(); 
-            checkAutoShift(); 
+            fetchPosDataFromFirebase(); fetchProductsFromFirebase(); checkAutoShift(); 
         };
     </script>
 </body>
