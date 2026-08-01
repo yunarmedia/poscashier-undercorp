@@ -301,6 +301,16 @@
                 </div>
             </div>
 
+            <div class="card" style="margin-bottom: 20px; border-color:#ccc; background:#fafbfc;">
+                <h3 style="color:var(--text-muted); font-size:12px; margin-bottom:8px;">PESANAN OJOL (ONLINE) 🛵</h3>
+                <div id="revOjolTotal" style="font-size:20px; font-weight:900; margin-bottom:10px;">Rp 0</div>
+                <div style="display:flex; justify-content:space-between; border-top:2px dashed var(--border-color); padding-top:10px;">
+                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--shopee); font-weight:bold;">ShopeeFood</span><br><strong id="revShopee">Rp 0</strong></div>
+                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--go); font-weight:bold;">GoFood</span><br><strong id="revGo">Rp 0</strong></div>
+                    <div style="text-align:center; flex:1;"><span style="font-size:10px; color:var(--grab); font-weight:bold;">GrabFood</span><br><strong id="revGrab">Rp 0</strong></div>
+                </div>
+            </div>
+
             <!-- LAPORAN DATA OMZET AKHIR -->
             <div class="card" style="border-top:4px solid var(--primary); background:#fffdfd; margin-bottom:20px;">
                 <h3 style="color:var(--primary); font-size:15px; margin-bottom:15px; font-weight: 900; text-align: center;">LAPORAN DATA OMZET AKHIR 📊</h3>
@@ -362,13 +372,13 @@
                           <option value="PERSEDIAAN">PERSEDIAAN</option>
                           <option value="PELUNASAN HUTANG">PELUNASAN HUTANG</option>
                           <option value="PERABOT DAN INVENTARIS">PERABOT DAN INVENTARIS</option>
-                          <option value="PIUTANG">PIUTANG</option>
+                          <!-- PERBAIKAN SPASI DI SINI AGAR SAMA DENGAN GOOGLE SHEETS -->
+                          <option value="PIUTANG ">PIUTANG</option>
                         </select>
                     </div>
                     <div class="form-group"><label>Nama/Keterangan</label><input type="text" id="expenseName"></div>
                     <div class="form-group"><label>Nominal (Rp)</label><input type="number" id="expenseAmount"></div>
                     
-                    <!-- INPUT FOTO NOTA -->
                     <div class="form-group" style="background:#f4f6f8; padding:10px; border-radius:8px; border:1px dashed var(--primary);">
                         <label style="color:var(--primary); font-weight:800;">📷 Foto Bukti / Nota (Opsional)</label>
                         <input type="file" id="expensePhoto" accept="image/*" onchange="handleExpensePhoto(this)" style="background:white; padding:6px; font-size: 11px;">
@@ -841,9 +851,6 @@
 
         function savePettyCash() { pettyCash = parseInt(document.getElementById('inputPettyCash').value) || 0; syncToCloud('pettyCash', pettyCash); document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash); renderRevenue(); showToast("Modal Awal diperbarui", "success"); }
         
-        // ============================================================================
-        // FITUR UPLOAD & KOMPRESI FOTO NOTA PENGELUARAN
-        // ============================================================================
         function handleExpensePhoto(input) {
             if (input.files && input.files[0]) {
                 const file = input.files[0];
@@ -854,7 +861,7 @@
                     img.src = event.target.result;
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
-                        let MAX_WIDTH = 600; // Kompresi aman agar Google Sheets & Firebase tidak berat
+                        let MAX_WIDTH = 600; 
                         let scaleSize = MAX_WIDTH / img.width;
                         if(scaleSize > 1) scaleSize = 1; 
                         
@@ -878,7 +885,7 @@
             let category = document.getElementById('expenseCategory').value;
             let name = document.getElementById('expenseName').value; 
             let amount = document.getElementById('expenseAmount').value;
-            let photo = document.getElementById('expensePhotoBase64').value; // Mengambil data foto
+            let photo = document.getElementById('expensePhotoBase64').value; 
             
             if(!payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran!", "error"); return; }
             
@@ -912,7 +919,6 @@
                 document.getElementById('expenseName').value = e.name;
                 document.getElementById('expenseAmount').value = e.amount;
                 
-                // Menampilkan preview foto jika ada
                 if (e.photo && e.photo !== "") {
                     document.getElementById('expensePhotoBase64').value = e.photo;
                     document.getElementById('expensePhotoPreview').src = e.photo;
@@ -935,7 +941,6 @@
             document.getElementById('expenseName').value = ""; 
             document.getElementById('expenseAmount').value = ""; 
             
-            // Bersihkan form foto
             document.getElementById('expensePhoto').value = "";
             document.getElementById('expensePhotoBase64').value = "";
             document.getElementById('expensePhotoPreview').style.display = 'none';
@@ -959,7 +964,6 @@
                     targetExpenses.forEach(e => { 
                         total += e.amount; let paymentInfo = e.payment || "-"; let catInfo = e.category || "-";
                         
-                        // Cek jika ada foto nota untuk menampilkan Lencana
                         let notaBadge = (e.photo && e.photo !== "") ? `<br><span style="font-size:9px; background:var(--info); color:white; padding:2px 5px; border-radius:4px; display:inline-block; margin-top:4px;">🖼️ Ada Nota</span>` : '';
 
                         trHtml += `<tr>
@@ -1133,7 +1137,6 @@
                 await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
                 let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === targetDate) : [];
                 
-                // Mengirim Pengeluaran Satu Per Satu beserta Fotonya
                 for (let e of targetExpenses) { 
                     await fetch(url, { 
                         method: 'POST', 
@@ -1146,7 +1149,7 @@
                             category: e.category, 
                             name: e.name, 
                             amount: e.amount,
-                            photo: e.photo || "" // Kirim data foto Base64
+                            photo: e.photo || "" 
                         }) 
                     }); 
                 }
