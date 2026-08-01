@@ -301,16 +301,6 @@
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom: 20px; border-color:#ccc; background:#fafbfc;">
-                <h3 style="color:var(--text-muted); font-size:12px; margin-bottom:8px;">PESANAN OJOL (ONLINE) 🛵</h3>
-                <div id="revOjolTotal" style="font-size:20px; font-weight:900; margin-bottom:10px;">Rp 0</div>
-                <div style="display:flex; justify-content:space-between; border-top:2px dashed var(--border-color); padding-top:10px;">
-                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--shopee); font-weight:bold;">ShopeeFood</span><br><strong id="revShopee">Rp 0</strong></div>
-                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--go); font-weight:bold;">GoFood</span><br><strong id="revGo">Rp 0</strong></div>
-                    <div style="text-align:center; flex:1;"><span style="font-size:10px; color:var(--grab); font-weight:bold;">GrabFood</span><br><strong id="revGrab">Rp 0</strong></div>
-                </div>
-            </div>
-
             <!-- LAPORAN DATA OMZET AKHIR -->
             <div class="card" style="border-top:4px solid var(--primary); background:#fffdfd; margin-bottom:20px;">
                 <h3 style="color:var(--primary); font-size:15px; margin-bottom:15px; font-weight: 900; text-align: center;">LAPORAN DATA OMZET AKHIR 📊</h3>
@@ -339,12 +329,20 @@
             </div>
         </div>
 
-        <!-- 3. PORTAL PENGELUARAN (DENGAN UPLOAD FOTO NOTA) -->
+        <!-- 3. PORTAL PENGELUARAN (DENGAN INPUT TANGGAL BACKDATE) -->
         <div id="page-expenses" class="page">
             <h2>Pencatatan Pengeluaran</h2>
             <div class="split-layout">
                 <div class="card">
                     <input type="hidden" id="expenseId">
+                    
+                    <!-- INPUT TANGGAL MUNDUR / BACKDATE -->
+                    <div class="form-group" style="background:#e6fffa; padding:10px; border-radius:8px; border:1px solid var(--success);">
+                        <label style="color:var(--success); font-weight:800;">📅 Tanggal Pengeluaran (Bisa diubah)</label>
+                        <input type="date" id="expenseDateInput" required style="border-color:var(--success); color:var(--success); font-weight:800;">
+                        <span style="font-size:10px; color:var(--text-muted); font-style:italic; display:block; margin-top:4px;">Data akan disinkronisasi ke tanggal ini.</span>
+                    </div>
+
                     <div class="form-group">
                         <label>Pembayaran</label>
                         <select id="expensePayment" required>
@@ -372,7 +370,6 @@
                           <option value="PERSEDIAAN">PERSEDIAAN</option>
                           <option value="PELUNASAN HUTANG">PELUNASAN HUTANG</option>
                           <option value="PERABOT DAN INVENTARIS">PERABOT DAN INVENTARIS</option>
-                          <!-- PERBAIKAN SPASI DI SINI AGAR SAMA DENGAN GOOGLE SHEETS -->
                           <option value="PIUTANG ">PIUTANG</option>
                         </select>
                     </div>
@@ -879,19 +876,28 @@
             }
         }
 
+        // ============================================================================
+        // FITUR SINKRONISASI TANGGAL MUNDUR (BACKDATE)
+        // ============================================================================
         function addExpense() {
             let id = document.getElementById('expenseId').value;
+            let dateInput = document.getElementById('expenseDateInput').value;
             let payment = document.getElementById('expensePayment').value;
             let category = document.getElementById('expenseCategory').value;
             let name = document.getElementById('expenseName').value; 
             let amount = document.getElementById('expenseAmount').value;
             let photo = document.getElementById('expensePhotoBase64').value; 
             
-            if(!payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran!", "error"); return; }
+            if(!dateInput || !payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran & tanggal!", "error"); return; }
             
+            // Konversi YYYY-MM-DD ke D/M/YYYY
+            let dateParts = dateInput.split('-');
+            let formattedDate = parseInt(dateParts[2]) + "/" + parseInt(dateParts[1]) + "/" + dateParts[0];
+
             if(id) {
                 let idx = expenses.findIndex(x => x.id == id);
                 if(idx !== -1) {
+                    expenses[idx].date = formattedDate; // Menimpa dengan tanggal yang dipilih
                     expenses[idx].payment = payment;
                     expenses[idx].category = category;
                     expenses[idx].name = name;
@@ -900,8 +906,7 @@
                 }
                 showToast("Pengeluaran berhasil di-update!", "success");
             } else {
-                let todayDate = new Date().toLocaleDateString('id-ID'); 
-                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: todayDate, photo: photo }); 
+                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: formattedDate, photo: photo }); 
                 showToast("Pengeluaran baru dicatat!", "success");
             }
             
@@ -914,6 +919,17 @@
             let e = expenses.find(x => x.id == id);
             if(e) {
                 document.getElementById('expenseId').value = e.id;
+                
+                // Konversi D/M/YYYY ke YYYY-MM-DD untuk kalender
+                let ed = e.date || new Date().toLocaleDateString('id-ID');
+                let dParts = ed.split('/');
+                if(dParts.length === 3) {
+                    let yyyy = dParts[2];
+                    let mm = dParts[1].padStart(2, '0');
+                    let dd = dParts[0].padStart(2, '0');
+                    document.getElementById('expenseDateInput').value = `${yyyy}-${mm}-${dd}`;
+                }
+
                 document.getElementById('expensePayment').value = e.payment || "";
                 document.getElementById('expenseCategory').value = e.category || "";
                 document.getElementById('expenseName').value = e.name;
@@ -936,6 +952,12 @@
 
         function cancelEditExpense() {
             document.getElementById('expenseId').value = "";
+            
+            // Kembalikan kalender ke hari ini
+            let tzoffset = (new Date()).getTimezoneOffset() * 60000;
+            let localISOTime = (new Date(Date.now() - tzoffset)).toISOString().split('T')[0];
+            document.getElementById('expenseDateInput').value = localISOTime;
+
             document.getElementById('expensePayment').value = "";
             document.getElementById('expenseCategory').value = "";
             document.getElementById('expenseName').value = ""; 
@@ -1339,6 +1361,7 @@
             let tzoffset = (new Date()).getTimezoneOffset() * 60000;
             let localISOTime = (new Date(Date.now() - tzoffset)).toISOString().split('T')[0];
             if(document.getElementById('revenueDate')) document.getElementById('revenueDate').value = localISOTime;
+            if(document.getElementById('expenseDateInput')) document.getElementById('expenseDateInput').value = localISOTime;
         }
 
         window.onload = function() { 
