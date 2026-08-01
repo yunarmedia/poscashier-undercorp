@@ -301,16 +301,6 @@
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom: 20px; border-color:#ccc; background:#fafbfc;">
-                <h3 style="color:var(--text-muted); font-size:12px; margin-bottom:8px;">PESANAN OJOL (ONLINE) 🛵</h3>
-                <div id="revOjolTotal" style="font-size:20px; font-weight:900; margin-bottom:10px;">Rp 0</div>
-                <div style="display:flex; justify-content:space-between; border-top:2px dashed var(--border-color); padding-top:10px;">
-                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--shopee); font-weight:bold;">ShopeeFood</span><br><strong id="revShopee">Rp 0</strong></div>
-                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--go); font-weight:bold;">GoFood</span><br><strong id="revGo">Rp 0</strong></div>
-                    <div style="text-align:center; flex:1;"><span style="font-size:10px; color:var(--grab); font-weight:bold;">GrabFood</span><br><strong id="revGrab">Rp 0</strong></div>
-                </div>
-            </div>
-
             <!-- LAPORAN DATA OMZET AKHIR -->
             <div class="card" style="border-top:4px solid var(--primary); background:#fffdfd; margin-bottom:20px;">
                 <h3 style="color:var(--primary); font-size:15px; margin-bottom:15px; font-weight: 900; text-align: center;">LAPORAN DATA OMZET AKHIR 📊</h3>
@@ -324,6 +314,7 @@
                 <div style="display:flex; justify-content:space-between; margin-bottom:10px; font-weight:700; font-size:13px; color:var(--text-main);">
                     <span>Total Omzet ojol:</span> <span id="finalOmzetOjol" style="color:var(--warning);">Rp 0</span>
                 </div>
+                
                 <div style="display:flex; justify-content:space-between; margin-bottom:15px; font-weight:900; font-size:14px; color:var(--primary); border-bottom: 2px dashed var(--border-color); padding-bottom: 10px;">
                     <span>Total Omzet:</span> <span id="finalOmzetTotal">Rp 0</span>
                 </div>
@@ -338,7 +329,7 @@
             </div>
         </div>
 
-        <!-- 3. PORTAL PENGELUARAN (DENGAN EDIT FITUR) -->
+        <!-- 3. PORTAL PENGELUARAN (DENGAN UPLOAD FOTO NOTA) -->
         <div id="page-expenses" class="page">
             <h2>Pencatatan Pengeluaran</h2>
             <div class="split-layout">
@@ -376,7 +367,18 @@
                     </div>
                     <div class="form-group"><label>Nama/Keterangan</label><input type="text" id="expenseName"></div>
                     <div class="form-group"><label>Nominal (Rp)</label><input type="number" id="expenseAmount"></div>
-                    <button class="btn btn-danger" id="btnSaveExpense" style="width: 100%;" onclick="addExpense()">SIMPAN PENGELUARAN</button>
+                    
+                    <!-- INPUT FOTO NOTA -->
+                    <div class="form-group" style="background:#f4f6f8; padding:10px; border-radius:8px; border:1px dashed var(--primary);">
+                        <label style="color:var(--primary); font-weight:800;">📷 Foto Bukti / Nota (Opsional)</label>
+                        <input type="file" id="expensePhoto" accept="image/*" onchange="handleExpensePhoto(this)" style="background:white; padding:6px; font-size: 11px;">
+                        <input type="hidden" id="expensePhotoBase64">
+                        <div style="text-align:center; margin-top:10px;">
+                            <img id="expensePhotoPreview" style="max-width:100px; display:none; border-radius:8px; border:1px solid #ccc;">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-danger" id="btnSaveExpense" style="width: 100%; margin-top:10px;" onclick="addExpense()">SIMPAN PENGELUARAN</button>
                     <button class="btn btn-outline" id="btnCancelExpense" style="width: 100%; margin-top:8px; display:none;" onclick="cancelEditExpense()">BATAL EDIT</button>
                 </div>
                 <div class="card" style="padding: 0;">
@@ -520,7 +522,6 @@
                 <div class="form-group"><label>Sandi STOK & PRODUK</label><input type="password" id="pin-inventory"></div>
                 <div class="form-group"><label>Sandi KARYAWAN & SHIFT</label><input type="password" id="pin-staff"></div>
                 <div class="form-group"><label>Sandi PENGATURAN</label><input type="password" id="pin-settings"></div>
-                <!-- TAMBAHAN SANDI SINKRONISASI -->
                 <div class="form-group" style="margin-top: 15px; border-top: 2px dashed var(--warning); padding-top: 15px;">
                     <label style="color:var(--danger);">Sandi SINKRONISASI SHEETS</label>
                     <input type="password" id="pin-sync" placeholder="Sandi khusus tombol sinkron">
@@ -618,7 +619,7 @@
             shift2Name: "", 
             activeShift: "1", 
             manualOverride: false, 
-            portalPins: { expenses: "", inventory: "", staff: "", settings: "", sync: "" }, // TAMBAHAN SYNC PIN
+            portalPins: { expenses: "", inventory: "", staff: "", settings: "", sync: "" }, 
             btAutoPrint: true,
             webhookUrl: "" 
         };
@@ -730,7 +731,7 @@
                 document.getElementById('pin-inventory').value = settings.portalPins.inventory || "";
                 document.getElementById('pin-staff').value = settings.portalPins.staff || "";
                 document.getElementById('pin-settings').value = settings.portalPins.settings || "";
-                document.getElementById('pin-sync').value = settings.portalPins.sync || ""; // LOAD SYNC PIN
+                document.getElementById('pin-sync').value = settings.portalPins.sync || ""; 
             }
         }
         function saveAdminPins() {
@@ -738,7 +739,7 @@
             settings.portalPins.inventory = document.getElementById('pin-inventory').value;
             settings.portalPins.staff = document.getElementById('pin-staff').value;
             settings.portalPins.settings = document.getElementById('pin-settings').value;
-            settings.portalPins.sync = document.getElementById('pin-sync').value; // SAVE SYNC PIN
+            settings.portalPins.sync = document.getElementById('pin-sync').value; 
             syncToCloud('settings', settings); showToast("Sandi Portal disimpan", "success"); attemptPage('pos'); 
         }
 
@@ -840,12 +841,44 @@
 
         function savePettyCash() { pettyCash = parseInt(document.getElementById('inputPettyCash').value) || 0; syncToCloud('pettyCash', pettyCash); document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash); renderRevenue(); showToast("Modal Awal diperbarui", "success"); }
         
+        // ============================================================================
+        // FITUR UPLOAD & KOMPRESI FOTO NOTA PENGELUARAN
+        // ============================================================================
+        function handleExpensePhoto(input) {
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = event => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let MAX_WIDTH = 600; // Kompresi aman agar Google Sheets & Firebase tidak berat
+                        let scaleSize = MAX_WIDTH / img.width;
+                        if(scaleSize > 1) scaleSize = 1; 
+                        
+                        canvas.width = img.width * scaleSize;
+                        canvas.height = img.height * scaleSize;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+                        document.getElementById('expensePhotoBase64').value = compressedBase64;
+                        document.getElementById('expensePhotoPreview').src = compressedBase64;
+                        document.getElementById('expensePhotoPreview').style.display = 'inline-block';
+                    };
+                };
+            }
+        }
+
         function addExpense() {
             let id = document.getElementById('expenseId').value;
             let payment = document.getElementById('expensePayment').value;
             let category = document.getElementById('expenseCategory').value;
             let name = document.getElementById('expenseName').value; 
             let amount = document.getElementById('expenseAmount').value;
+            let photo = document.getElementById('expensePhotoBase64').value; // Mengambil data foto
             
             if(!payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran!", "error"); return; }
             
@@ -856,11 +889,12 @@
                     expenses[idx].category = category;
                     expenses[idx].name = name;
                     expenses[idx].amount = parseInt(amount);
+                    expenses[idx].photo = photo; 
                 }
                 showToast("Pengeluaran berhasil di-update!", "success");
             } else {
                 let todayDate = new Date().toLocaleDateString('id-ID'); 
-                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: todayDate }); 
+                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: todayDate, photo: photo }); 
                 showToast("Pengeluaran baru dicatat!", "success");
             }
             
@@ -877,6 +911,17 @@
                 document.getElementById('expenseCategory').value = e.category || "";
                 document.getElementById('expenseName').value = e.name;
                 document.getElementById('expenseAmount').value = e.amount;
+                
+                // Menampilkan preview foto jika ada
+                if (e.photo && e.photo !== "") {
+                    document.getElementById('expensePhotoBase64').value = e.photo;
+                    document.getElementById('expensePhotoPreview').src = e.photo;
+                    document.getElementById('expensePhotoPreview').style.display = 'inline-block';
+                } else {
+                    document.getElementById('expensePhotoBase64').value = "";
+                    document.getElementById('expensePhotoPreview').style.display = 'none';
+                }
+
                 document.getElementById('btnSaveExpense').innerText = "UPDATE PENGELUARAN";
                 document.getElementById('btnCancelExpense').style.display = "block";
                 showToast("Memuat mode edit...", "info");
@@ -889,6 +934,13 @@
             document.getElementById('expenseCategory').value = "";
             document.getElementById('expenseName').value = ""; 
             document.getElementById('expenseAmount').value = ""; 
+            
+            // Bersihkan form foto
+            document.getElementById('expensePhoto').value = "";
+            document.getElementById('expensePhotoBase64').value = "";
+            document.getElementById('expensePhotoPreview').style.display = 'none';
+            document.getElementById('expensePhotoPreview').src = "";
+
             document.getElementById('btnSaveExpense').innerText = "SIMPAN PENGELUARAN";
             document.getElementById('btnCancelExpense').style.display = "none";
         }
@@ -906,9 +958,13 @@
                 else {
                     targetExpenses.forEach(e => { 
                         total += e.amount; let paymentInfo = e.payment || "-"; let catInfo = e.category || "-";
+                        
+                        // Cek jika ada foto nota untuk menampilkan Lencana
+                        let notaBadge = (e.photo && e.photo !== "") ? `<br><span style="font-size:9px; background:var(--info); color:white; padding:2px 5px; border-radius:4px; display:inline-block; margin-top:4px;">🖼️ Ada Nota</span>` : '';
+
                         trHtml += `<tr>
                             <td style="font-size:10px;">${catInfo}<br><strong style="color:var(--info);">${paymentInfo}</strong></td>
-                            <td style="font-weight:700;">${e.name}</td>
+                            <td style="font-weight:700;">${e.name} ${notaBadge}</td>
                             <td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td>
                             <td>
                                 <button class="btn btn-outline" style="padding:4px 8px; font-size:11px; margin-bottom:4px; border-color:var(--info); color:var(--info);" onclick="editExpense(${e.id})">Edit</button>
@@ -922,24 +978,18 @@
             document.getElementById('expenseTotal').innerText = formatRp(total);
         }
 
-        // ============================================================================
-        // PERBAIKAN LOGIKA MATEMATIKA OMZET: AMAN DARI ERROR NULL
-        // ============================================================================
         function renderRevenue() {
-            let tc=0, tq=0, to=0; // Total Cash, Total QRIS, Total Ojol
+            let tc=0, tq=0, to=0; 
             let s1c=0, s1q=0, s2c=0, s2q=0, shopee=0, go=0, grab=0;
             let targetDate = getSelectedDate(); 
 
             if(orders && Array.isArray(orders)) {
                 orders.forEach(o => {
                     if (o.status === 'selesai' && getOrderDate(o) === targetDate) {
-                        
-                        // Hitungan untuk Laporan Akhir
                         if (o.payment === 'Cash') tc += o.total;
                         else if(['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += o.total;
                         else tq += o.total;
 
-                        // Hitungan Shift & Ojol
                         if(o.payment === 'Shopeefood') shopee+=o.total;
                         else if(o.payment === 'Gofood') go+=o.total;
                         else if(o.payment === 'Grabfood') grab+=o.total;
@@ -949,7 +999,6 @@
                 });
             }
             
-            // Render Shift
             if(document.getElementById('revShift1Cash')) document.getElementById('revShift1Cash').innerText = formatRp(s1c); 
             if(document.getElementById('revShift1Qris')) document.getElementById('revShift1Qris').innerText = formatRp(s1q); 
             if(document.getElementById('revShift1Total')) document.getElementById('revShift1Total').innerText = formatRp(s1c + s1q);
@@ -957,20 +1006,17 @@
             if(document.getElementById('revShift2Qris')) document.getElementById('revShift2Qris').innerText = formatRp(s2q); 
             if(document.getElementById('revShift2Total')) document.getElementById('revShift2Total').innerText = formatRp(s2c + s2q);
             
-            // Render Ojol
             if(document.getElementById('revShopee')) document.getElementById('revShopee').innerText = formatRp(shopee); 
             if(document.getElementById('revGo')) document.getElementById('revGo').innerText = formatRp(go); 
             if(document.getElementById('revGrab')) document.getElementById('revGrab').innerText = formatRp(grab);
             if(document.getElementById('revOjolTotal')) document.getElementById('revOjolTotal').innerText = formatRp(shopee + go + grab);
 
-            // Logika Fisik (Sama persis dengan WA)
             let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === targetDate) : [];
             let expTotal = targetExpenses.reduce((s, e) => s + e.amount, 0);
             
             let tcPetty = tc + pettyCash;
             let actualDrawerCash = tcPetty - expTotal;
 
-            // PENGAMANAN ELEMENT HTML (Anti-Error Null)
             if(document.getElementById('finalOmzetCash')) document.getElementById('finalOmzetCash').innerText = formatRp(tc);
             if(document.getElementById('finalOmzetQris')) document.getElementById('finalOmzetQris').innerText = formatRp(tq);
             if(document.getElementById('finalOmzetOjol')) document.getElementById('finalOmzetOjol').innerText = formatRp(to);
@@ -1058,14 +1104,10 @@
         
         function updateAutoPrintSetting(isChecked) { settings.btAutoPrint = isChecked; syncToCloud('settings', settings); showToast(isChecked ? "Auto-Print On" : "Auto-Print Off", "info"); }
 
-        // ============================================================================
-        // FITUR KUNCI SINKRONISASI KE GOOGLE SHEETS
-        // ============================================================================
         async function syncToSheets() {
-            // CEK SANDI SINKRONISASI
             if (settings.portalPins && settings.portalPins.sync) {
                 let inputPin = prompt("Masukkan Sandi Sinkronisasi Sheets:");
-                if (inputPin === null) return; // User menekan tombol 'Batal'
+                if (inputPin === null) return; 
                 if (inputPin !== settings.portalPins.sync) {
                     showToast("Sandi Sinkronisasi Salah!", "error");
                     return;
@@ -1090,7 +1132,24 @@
             try {
                 await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
                 let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === targetDate) : [];
-                for (let e of targetExpenses) { await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "pengeluaran", date: targetDate, payment: e.payment, category: e.category, name: e.name, amount: e.amount }) }); }
+                
+                // Mengirim Pengeluaran Satu Per Satu beserta Fotonya
+                for (let e of targetExpenses) { 
+                    await fetch(url, { 
+                        method: 'POST', 
+                        mode: 'no-cors', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ 
+                            type: "pengeluaran", 
+                            date: targetDate, 
+                            payment: e.payment, 
+                            category: e.category, 
+                            name: e.name, 
+                            amount: e.amount,
+                            photo: e.photo || "" // Kirim data foto Base64
+                        }) 
+                    }); 
+                }
                 showToast("Sinkronisasi Selesai!", "success");
             } catch (err) { showToast("Gagal terhubung ke Sheets", "error"); }
         }
@@ -1281,6 +1340,7 @@
 
         window.onload = function() { 
             setTodayDate(); 
+            // Inisialisasi awal kebal error memori lokal
             renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings(); 
             renderRevenue(); renderExpenses(); filterHistory(window.currentHistoryFilter); 
             updateSidebarCashier(); renderInventory(); renderPOS(currentPosFilter);
