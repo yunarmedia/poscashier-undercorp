@@ -301,6 +301,16 @@
                 </div>
             </div>
 
+            <div class="card" style="margin-bottom: 20px; border-color:#ccc; background:#fafbfc;">
+                <h3 style="color:var(--text-muted); font-size:12px; margin-bottom:8px;">PESANAN OJOL (ONLINE) 🛵</h3>
+                <div id="revOjolTotal" style="font-size:20px; font-weight:900; margin-bottom:10px;">Rp 0</div>
+                <div style="display:flex; justify-content:space-between; border-top:2px dashed var(--border-color); padding-top:10px;">
+                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--shopee); font-weight:bold;">ShopeeFood</span><br><strong id="revShopee">Rp 0</strong></div>
+                    <div style="text-align:center; flex:1; border-right:2px dashed var(--border-color);"><span style="font-size:10px; color:var(--go); font-weight:bold;">GoFood</span><br><strong id="revGo">Rp 0</strong></div>
+                    <div style="text-align:center; flex:1;"><span style="font-size:10px; color:var(--grab); font-weight:bold;">GrabFood</span><br><strong id="revGrab">Rp 0</strong></div>
+                </div>
+            </div>
+
             <!-- LAPORAN DATA OMZET AKHIR -->
             <div class="card" style="border-top:4px solid var(--primary); background:#fffdfd; margin-bottom:20px;">
                 <h3 style="color:var(--primary); font-size:15px; margin-bottom:15px; font-weight: 900; text-align: center;">LAPORAN DATA OMZET AKHIR 📊</h3>
@@ -329,20 +339,12 @@
             </div>
         </div>
 
-        <!-- 3. PORTAL PENGELUARAN (DENGAN INPUT TANGGAL BACKDATE) -->
+        <!-- 3. PORTAL PENGELUARAN (DENGAN UPLOAD FOTO NOTA) -->
         <div id="page-expenses" class="page">
             <h2>Pencatatan Pengeluaran</h2>
             <div class="split-layout">
                 <div class="card">
                     <input type="hidden" id="expenseId">
-                    
-                    <!-- INPUT TANGGAL MUNDUR / BACKDATE -->
-                    <div class="form-group" style="background:#e6fffa; padding:10px; border-radius:8px; border:1px solid var(--success);">
-                        <label style="color:var(--success); font-weight:800;">📅 Tanggal Pengeluaran (Bisa diubah)</label>
-                        <input type="date" id="expenseDateInput" required style="border-color:var(--success); color:var(--success); font-weight:800;">
-                        <span style="font-size:10px; color:var(--text-muted); font-style:italic; display:block; margin-top:4px;">Data akan disinkronisasi ke tanggal ini.</span>
-                    </div>
-
                     <div class="form-group">
                         <label>Pembayaran</label>
                         <select id="expensePayment" required>
@@ -611,7 +613,7 @@
         let currentPosFilter = 'Semua';
         let editingOrderId = null;
         let knownOrderIds = new Set();
-        let isInitialLoad = true;
+        let isInitialLoad = true; // KUNCI UTAMA ANTI-TIMPA
         
         window.currentHistoryFilter = 'selesai';
         window.currentSubtotal = 0;
@@ -664,9 +666,31 @@
             return new Date().toLocaleDateString('id-ID');
         }
 
+        // ============================================================================
+        // FUNGSI SINKRONISASI CLOUD (DENGAN PENGAMAN MEMORI & ANTI-TIMPA)
+        // ============================================================================
         function syncToCloud(key, dataObj) {
-            localStorage.setItem('pos_' + key, JSON.stringify(dataObj)); 
-            db.ref('pos_data/' + key).set(dataObj).catch(err => { console.error(err); showToast("Gagal sync ke Cloud, tapi tersimpan aman di HP!", "warning"); });
+            // JIKA APLIKASI BELUM SIAP, JANGAN LAKUKAN APAPUN (Mencegah "BLOKIR" Error)
+            if (isInitialLoad) return; 
+
+            try {
+                // TRIK ANTI-PENUH: Cegat foto nota masuk ke memori HP
+                let localData = JSON.parse(JSON.stringify(dataObj));
+                if (key === 'expenses' && Array.isArray(localData)) {
+                    localData.forEach(exp => {
+                        if (exp.photo) exp.photo = ""; // Kosongkan base64 untuk HP
+                    });
+                }
+                localStorage.setItem('pos_' + key, JSON.stringify(localData)); 
+            } catch (e) {
+                console.warn("Memori HP Penuh, bypass ke Cloud");
+            }
+            
+            // DATA ASLI (BESERTA FOTO) DIKIRIM KE FIREBASE
+            db.ref('pos_data/' + key).set(dataObj).catch(err => { 
+                console.error(err); 
+                showToast("Gagal terkirim ke Cloud, periksa koneksi internet!", "warning"); 
+            });
         }
 
         function fetchPosDataFromFirebase() {
@@ -681,22 +705,37 @@
                     if (data.staffList) staffList = data.staffList;
                     if (data.settings) settings = { ...defaultSettings, ...data.settings };
                     
-                    localStorage.setItem('pos_orders', JSON.stringify(orders));
-                    localStorage.setItem('pos_expenses', JSON.stringify(expenses));
-                    localStorage.setItem('pos_pettyCash', pettyCash);
-                    localStorage.setItem('pos_staffList', JSON.stringify(staffList));
-                    localStorage.setItem('pos_settings', JSON.stringify(settings));
+                    try {
+                        localStorage.setItem('pos_orders', JSON.stringify(orders));
+                        
+                        // TRIK ANTI-PENUH SAAT DOWNLOAD DARI CLOUD
+                        let localExpenses = JSON.parse(JSON.stringify(expenses));
+                        localExpenses.forEach(exp => {
+                            if (exp.photo) exp.photo = ""; 
+                        });
+                        localStorage.setItem('pos_expenses', JSON.stringify(localExpenses));
+                        
+                        localStorage.setItem('pos_pettyCash', pettyCash);
+                        localStorage.setItem('pos_staffList', JSON.stringify(staffList));
+                        localStorage.setItem('pos_settings', JSON.stringify(settings));
+                    } catch (e) {
+                        console.warn("Memori HP penuh, data hanya dibaca langsung dari Cloud.");
+                    }
 
                     if (!isInitialLoad) {
                         orders.forEach(o => {
                             if (!knownOrderIds.has(o.id) && o.status === 'pending' && o.shift === 'Online Web') {
                                 showToast(`PESANAN BARU DARI WEB: ${o.customer}`, "warning"); playBuzzer();
-                                if (document.getElementById('btAutoPrint').checked) executePrint(o, true);
+                                if (document.getElementById('btAutoPrint').checked) {
+                                    executePrint(o, true).catch(e => console.log(e));
+                                }
                             }
                         });
                     }
                     knownOrderIds.clear();
                     orders.forEach(o => knownOrderIds.add(o.id));
+                    
+                    // STATUS CLOUD SELESAI DIMUAT
                     isInitialLoad = false;
                     
                     renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings();
@@ -751,7 +790,8 @@
         }
 
         function checkAutoShift() {
-            if (settings.manualOverride) return;
+            // CEGAH AUTO-SHIFT JIKA DATA CLOUD BELUM SIAP (Mencegah "BLOKIR" Error)
+            if (settings.manualOverride || isInitialLoad) return; 
             const hour = new Date().getHours(); let newShift = settings.activeShift;
             if (hour >= 10 && hour < 13) newShift = "1"; else if (hour >= 13 && hour < 22) newShift = "2";
             if (settings.activeShift !== newShift) { settings.activeShift = newShift; updateSidebarCashier(); syncToCloud('settings', settings); }
@@ -876,37 +916,35 @@
             }
         }
 
-        // ============================================================================
-        // FITUR SINKRONISASI TANGGAL MUNDUR (BACKDATE)
-        // ============================================================================
         function addExpense() {
+            // GEMBOK PENGELUARAN: Jangan izinkan input kalau sistem belum siap!
+            if (isInitialLoad) {
+                showToast("⏳ TUNGGU! Sistem sedang menarik data dari Cloud...", "warning");
+                return;
+            }
+
             let id = document.getElementById('expenseId').value;
-            let dateInput = document.getElementById('expenseDateInput').value;
             let payment = document.getElementById('expensePayment').value;
             let category = document.getElementById('expenseCategory').value;
             let name = document.getElementById('expenseName').value; 
             let amount = document.getElementById('expenseAmount').value;
             let photo = document.getElementById('expensePhotoBase64').value; 
             
-            if(!dateInput || !payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran & tanggal!", "error"); return; }
+            if(!payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran!", "error"); return; }
             
-            // Konversi YYYY-MM-DD ke D/M/YYYY
-            let dateParts = dateInput.split('-');
-            let formattedDate = parseInt(dateParts[2]) + "/" + parseInt(dateParts[1]) + "/" + dateParts[0];
-
             if(id) {
                 let idx = expenses.findIndex(x => x.id == id);
                 if(idx !== -1) {
-                    expenses[idx].date = formattedDate; // Menimpa dengan tanggal yang dipilih
                     expenses[idx].payment = payment;
                     expenses[idx].category = category;
                     expenses[idx].name = name;
                     expenses[idx].amount = parseInt(amount);
-                    expenses[idx].photo = photo; 
+                    if (photo !== "") expenses[idx].photo = photo; 
                 }
                 showToast("Pengeluaran berhasil di-update!", "success");
             } else {
-                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: formattedDate, photo: photo }); 
+                let inputDate = getSelectedDate(); 
+                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: inputDate, photo: photo }); 
                 showToast("Pengeluaran baru dicatat!", "success");
             }
             
@@ -919,23 +957,13 @@
             let e = expenses.find(x => x.id == id);
             if(e) {
                 document.getElementById('expenseId').value = e.id;
-                
-                // Konversi D/M/YYYY ke YYYY-MM-DD untuk kalender
-                let ed = e.date || new Date().toLocaleDateString('id-ID');
-                let dParts = ed.split('/');
-                if(dParts.length === 3) {
-                    let yyyy = dParts[2];
-                    let mm = dParts[1].padStart(2, '0');
-                    let dd = dParts[0].padStart(2, '0');
-                    document.getElementById('expenseDateInput').value = `${yyyy}-${mm}-${dd}`;
-                }
-
                 document.getElementById('expensePayment').value = e.payment || "";
                 document.getElementById('expenseCategory').value = e.category || "";
                 document.getElementById('expenseName').value = e.name;
                 document.getElementById('expenseAmount').value = e.amount;
                 
-                if (e.photo && e.photo !== "") {
+                // Tampilkan foto jika ada dan bukan tulisan placeholder
+                if (e.photo && e.photo !== "" && e.photo !== "TERSIMPAN_DI_CLOUD") {
                     document.getElementById('expensePhotoBase64').value = e.photo;
                     document.getElementById('expensePhotoPreview').src = e.photo;
                     document.getElementById('expensePhotoPreview').style.display = 'inline-block';
@@ -952,12 +980,6 @@
 
         function cancelEditExpense() {
             document.getElementById('expenseId').value = "";
-            
-            // Kembalikan kalender ke hari ini
-            let tzoffset = (new Date()).getTimezoneOffset() * 60000;
-            let localISOTime = (new Date(Date.now() - tzoffset)).toISOString().split('T')[0];
-            document.getElementById('expenseDateInput').value = localISOTime;
-
             document.getElementById('expensePayment').value = "";
             document.getElementById('expenseCategory').value = "";
             document.getElementById('expenseName').value = ""; 
@@ -986,7 +1008,7 @@
                     targetExpenses.forEach(e => { 
                         total += e.amount; let paymentInfo = e.payment || "-"; let catInfo = e.category || "-";
                         
-                        let notaBadge = (e.photo && e.photo !== "") ? `<br><span style="font-size:9px; background:var(--info); color:white; padding:2px 5px; border-radius:4px; display:inline-block; margin-top:4px;">🖼️ Ada Nota</span>` : '';
+                        let notaBadge = (e.photo && e.photo !== "" && e.photo !== "TERSIMPAN_DI_CLOUD") ? `<br><span style="font-size:9px; background:var(--info); color:white; padding:2px 5px; border-radius:4px; display:inline-block; margin-top:4px;">🖼️ Ada Nota</span>` : '';
 
                         trHtml += `<tr>
                             <td style="font-size:10px;">${catInfo}<br><strong style="color:var(--info);">${paymentInfo}</strong></td>
@@ -1305,20 +1327,65 @@
         }
 
         function saveOrder(status, paymentMethod) {
+            // GEMBOK KASIR: Jangan izinkan transaksi kalau sistem belum siap!
+            if (isInitialLoad) {
+                showToast("⏳ TUNGGU! Sistem sedang menarik data dari Cloud...", "warning");
+                return;
+            }
+
             if(cart.length === 0) { showToast("Keranjang kosong!", "error"); return; }
-            let cust = document.getElementById('orderNote').value || "-"; let subtotal = window.currentSubtotal || 0; let discount = window.currentDiscount || 0; let total = window.currentFinalTotal || 0; let todayDate = new Date().toLocaleDateString('id-ID'); 
+            let cust = document.getElementById('orderNote').value || "-"; 
+            let subtotal = window.currentSubtotal || 0; 
+            let discount = window.currentDiscount || 0; 
+            let total = window.currentFinalTotal || 0; 
+            let todayDate = new Date().toLocaleDateString('id-ID'); 
             if(!orders) orders = [];
             
+            let orderToPrint = null;
+
             if(editingOrderId) { 
-                let idx = orders.findIndex(o => o.id === editingOrderId && o.status === 'pending'); if(idx === -1) idx = orders.findIndex(o => o.id === editingOrderId); 
-                if(idx !== -1) { orders[idx].items = [...cart]; orders[idx].subtotal = subtotal; orders[idx].discount = discount; orders[idx].total = total; orders[idx].customer = cust; orders[idx].status = status; orders[idx].payment = paymentMethod; if(status === 'selesai') executePrint(orders[idx]); } 
+                let idx = orders.findIndex(o => o.id === editingOrderId && o.status === 'pending'); 
+                if(idx === -1) idx = orders.findIndex(o => o.id === editingOrderId); 
+                if(idx !== -1) { 
+                    orders[idx].items = [...cart]; 
+                    orders[idx].subtotal = subtotal; 
+                    orders[idx].discount = discount; 
+                    orders[idx].total = total; 
+                    orders[idx].customer = cust; 
+                    orders[idx].status = status; 
+                    orders[idx].payment = paymentMethod; 
+                    orderToPrint = orders[idx];
+                } 
             } else { 
                 let uniqueId = 'ORD-' + Date.now().toString(36).toUpperCase();
                 let nO = { id: uniqueId, time: getTimestamp(), date: todayDate, customer: cust, subtotal: subtotal, discount: discount, total: total, status: status, shift: settings.activeShift, payment: paymentMethod, items: [...cart] }; 
-                orders.push(nO); if(status === 'selesai' || document.getElementById('btAutoPrint').checked) executePrint(nO); 
+                orders.push(nO); 
+                orderToPrint = nO;
             }
-            syncToCloud('orders', orders); cart = []; document.getElementById('orderNote').value = ""; document.getElementById('discountValue').value = ""; editingOrderId = null; renderPOS(currentPosFilter); renderRevenue(); 
-            if (status === 'selesai') showToast(`Pembayaran ${paymentMethod} Berhasil!`, "success"); else showToast("Pesanan digantung", "info");
+            
+            syncToCloud('orders', orders); 
+            
+            // LANGSUNG bersihkan layar dan keranjang kasir (Anti-Macet)
+            cart = []; 
+            document.getElementById('orderNote').value = ""; 
+            document.getElementById('discountValue').value = ""; 
+            editingOrderId = null; 
+            renderPOS(currentPosFilter); 
+            renderRevenue(); 
+            
+            if (status === 'selesai') showToast(`Pembayaran ${paymentMethod} Berhasil!`, "success"); 
+            else showToast("Pesanan digantung", "info");
+
+            // PROSES PRINT DILAKUKAN PALING AKHIR (Dibungkus pelindung Anti-Crash)
+            if (orderToPrint) {
+                try {
+                    if(status === 'selesai' || document.getElementById('btAutoPrint').checked) {
+                        executePrint(orderToPrint).catch(e => console.error("Print Error Bypass:", e)); 
+                    }
+                } catch (err) {
+                    console.error("Printer Crash Bypass:", err);
+                }
+            }
         }
 
         async function executePrint(order, isIncomingWebOrder = false) {
@@ -1361,12 +1428,11 @@
             let tzoffset = (new Date()).getTimezoneOffset() * 60000;
             let localISOTime = (new Date(Date.now() - tzoffset)).toISOString().split('T')[0];
             if(document.getElementById('revenueDate')) document.getElementById('revenueDate').value = localISOTime;
-            if(document.getElementById('expenseDateInput')) document.getElementById('expenseDateInput').value = localISOTime;
         }
 
         window.onload = function() { 
             setTodayDate(); 
-            // Inisialisasi awal kebal error memori lokal
+            
             renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings(); 
             renderRevenue(); renderExpenses(); filterHistory(window.currentHistoryFilter); 
             updateSidebarCashier(); renderInventory(); renderPOS(currentPosFilter);
