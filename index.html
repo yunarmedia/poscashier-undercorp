@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.5";
+        const APP_VERSION = "1.0.6";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -1373,11 +1373,23 @@ let settings = readLocalJSON('settings', defaultSettings);
             const cloudOrders = recordsFromV2(cloud);
             orders = mergeCloudRecords(cloudOrders, orders);
 
-            orders.forEach(record => {
-                lastSyncedOrderRevision.set(String(record.id), getRecordRevision(record));
+            // Hanya record yang benar-benar terlihat dari Cloud yang dianggap synced.
+            // Record yang hanya ada di local tetap akan dikirim ke V2.
+            Object.values(cloud).forEach(record => {
+                if (record && typeof record === 'object' && record.id !== undefined) {
+                    lastSyncedOrderRevision.set(String(record.id), getRecordRevision(record));
+                }
             });
 
             persistLocalData('orders', orders);
+
+            // Local-first recovery: jika ada transaksi yang belum pernah ada di V2,
+            // dorong kembali ke Cloud tanpa menunggu transaksi baru.
+            if (!isInitialLoad && orders.length) {
+                syncCollectionV2('orders', orders).catch(error =>
+                    console.error('[V2 Local Recovery Orders]', error)
+                );
+            }
 
             if (isPageActive('pos')) renderPOS(currentPosFilter);
             else if (isPageActive('revenue')) renderRevenue();
@@ -1403,11 +1415,19 @@ let settings = readLocalJSON('settings', defaultSettings);
             const cloudExpenses = recordsFromV2(cloud);
             expenses = mergeCloudRecords(cloudExpenses, expenses);
 
-            expenses.forEach(record => {
-                lastSyncedExpenseRevision.set(String(record.id), getRecordRevision(record));
+            Object.values(cloud).forEach(record => {
+                if (record && typeof record === 'object' && record.id !== undefined) {
+                    lastSyncedExpenseRevision.set(String(record.id), getRecordRevision(record));
+                }
             });
 
             persistLocalData('expenses', expenses);
+
+            if (!isInitialLoad && expenses.length) {
+                syncCollectionV2('expenses', expenses).catch(error =>
+                    console.error('[V2 Local Recovery Expenses]', error)
+                );
+            }
 
             if (isPageActive('expenses')) renderExpenses();
             if (isPageActive('revenue')) renderRevenue();
