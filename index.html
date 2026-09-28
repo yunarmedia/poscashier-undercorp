@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.4";
+        const APP_VERSION = "1.0.5";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -824,6 +824,16 @@
         
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+
+        // Firebase RTDB disk persistence:
+        // cache + antrean write tetap tersedia setelah reload/restart aplikasi.
+        // Jika WebView/browser tidak mengizinkan persistence, POS tetap berjalan
+        // dengan localStorage + cloud transaction sebagai fallback.
+        try {
+            db.setPersistenceEnabled(true);
+        } catch (error) {
+            console.warn('[FirebasePersistence] Tidak tersedia:', error);
+        }
 
         // 2. TANGGAL STANDAR — SEMUA LOGIKA LAPORAN MENGGUNAKAN YYYY-MM-DD
         // Jangan pernah fallback ke "hari ini" untuk data transaksi/pengeluaran.
@@ -1085,17 +1095,50 @@
             webhookUrl: "" 
         };
 
-        let orders = forceArray(JSON.parse(localStorage.getItem('pos_orders')));
-        let expenses = forceArray(JSON.parse(localStorage.getItem('pos_expenses')));
-        let pettyCash = parseInt(localStorage.getItem('pos_pettyCash')) || 0;
-        let staffList = JSON.parse(localStorage.getItem('pos_staffList')) || { "Capster": [], "Kitchen": [], "Bar": [] };
-        let products = forceArray(JSON.parse(localStorage.getItem('pos_products')));
-        let settings = JSON.parse(localStorage.getItem('pos_settings')) || defaultSettings;
+        // Safe local storage reader.
+// localStorage yang rusak/tidak valid TIDAK boleh membuat seluruh JavaScript boot gagal.
+function readLocalJSON(key, fallback) {
+    const primaryKey = 'pos_' + key;
+    const backupKey = 'pos_backup_' + key;
+
+    try {
+        const raw = localStorage.getItem(primaryKey);
+        if (raw !== null) {
+            const parsed = JSON.parse(raw);
+            if (parsed !== null && parsed !== undefined) return parsed;
+        }
+    } catch (error) {
+        console.warn('[LocalStorage] Data utama rusak:', key, error);
+    }
+
+    try {
+        const backupRaw = localStorage.getItem(backupKey);
+        if (backupRaw !== null) {
+            const backup = JSON.parse(backupRaw);
+            if (backup !== null && backup !== undefined) {
+                console.warn('[LocalStorage] Memulihkan backup:', key);
+                try { localStorage.setItem(primaryKey, JSON.stringify(backup)); } catch (_) {}
+                return backup;
+            }
+        }
+    } catch (error) {
+        console.warn('[LocalStorage] Backup rusak:', key, error);
+    }
+
+    return fallback;
+}
+
+let orders = forceArray(readLocalJSON('orders', []));
+let expenses = forceArray(readLocalJSON('expenses', []));
+let pettyCash = Number(readLocalJSON('pettyCash', 0)) || 0;
+let staffList = readLocalJSON('staffList', { "Capster": [], "Kitchen": [], "Bar": [] });
+let products = forceArray(readLocalJSON('products', []));
+let settings = readLocalJSON('settings', defaultSettings);
 
         if (settings.storeName === "UNDERCORP POS" || settings.storeName === "UNDERCORP POS - Ultimate Persistent") {
             settings.storeName = "WARMINDO DSAMBER";
             settings.footer = "Terimakasih sudah berkunjung!\nKritik dan saran kirim ke WhatsApp: 0813-8191-866 | Instagram: @warmindo_dsamber";
-            localStorage.setItem('pos_settings', JSON.stringify(settings));
+            persistLocalData('settings', settings);
         }
 
         let printerKasirCharacteristic = null; let printerDapurCharacteristic = null;
@@ -1158,9 +1201,20 @@
                 if (key === 'expenses' && Array.isArray(localData)) {
                     localData.forEach(exp => { if (exp.photo) exp.photo = "TERSIMPAN_DI_CLOUD"; });
                 }
-                localStorage.setItem('pos_' + key, JSON.stringify(localData));
-            } catch (e) {}
+
+                const serialized = JSON.stringify(localData);
+
+                // Primary + independent backup.
+                // Backup ikut diperbarui pada setiap successful local persistence,
+                // sehingga reload tidak bergantung pada satu localStorage entry.
+                localStorage.setItem('pos_' + key, serialized);
+                localStorage.setItem('pos_backup_' + key, serialized);
+            } catch (e) {
+                console.error('[LocalPersistence] Gagal menyimpan:', key, e);
+            }
         }
+
+        let posDataListenerStarted = false;
 
         function syncToCloud(key, dataObj) {
             if (isInitialLoad) return;
@@ -1223,6 +1277,15 @@
 
         function fetchPosDataFromFirebase() {
             document.getElementById('syncDataStatus').innerText = "🔄 Syncing...";
+
+            // Jangan pernah memasang listener yang sama berkali-kali.
+            // Tombol recovery hanya mengubah state lokal lalu memakai listener existing.
+            if (posDataListenerStarted) {
+                isInitialLoad = true;
+                return;
+            }
+            posDataListenerStarted = true;
+
             db.ref('pos_data').on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data) {
@@ -1239,15 +1302,11 @@
                     if (data.settings) settings = { ...defaultSettings, ...data.settings };
                     
                     setTimeout(() => {
-                        try {
-                            localStorage.setItem('pos_orders', JSON.stringify(orders));
-                            let localExpenses = JSON.parse(JSON.stringify(expenses));
-                            localExpenses.forEach(exp => { if (exp.photo) exp.photo = "TERSIMPAN_DI_CLOUD"; });
-                            localStorage.setItem('pos_expenses', JSON.stringify(localExpenses));
-                            localStorage.setItem('pos_pettyCash', pettyCash);
-                            localStorage.setItem('pos_staffList', JSON.stringify(staffList));
-                            localStorage.setItem('pos_settings', JSON.stringify(settings));
-                        } catch (e) {}
+                        persistLocalData('orders', orders);
+                        persistLocalData('expenses', expenses);
+                        persistLocalData('pettyCash', pettyCash);
+                        persistLocalData('staffList', staffList);
+                        persistLocalData('settings', settings);
                     }, 50);
 
                     if (!isInitialLoad) {
@@ -1282,11 +1341,11 @@
         }
 
         function forceReloadFromCloud() {
-            if (confirm("Tarik ulang seluruh data dari Cloud ke HP ini?")) {
-                isInitialLoad = true;
-                fetchPosDataFromFirebase();
-                showToast("Memulai penarikan ulang data...", "info");
-            }
+            if (!confirm("Periksa ulang data Cloud dan gabungkan dengan data lokal?\n\nData lokal TIDAK akan dihapus.")) return;
+
+            isInitialLoad = true;
+            fetchPosDataFromFirebase();
+            showToast("Memeriksa ulang Cloud tanpa menghapus data lokal...", "info");
         }
 
         function formatRp(angka) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka); }
