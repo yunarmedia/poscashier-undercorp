@@ -778,10 +778,9 @@
         const db = firebase.database();
 
         // 2. TANGGAL STANDAR ISO (YYYY-MM-DD)
-        // Penting: data dengan tanggal tidak valid TIDAK boleh dipindahkan
-        // secara otomatis ke hari ini karena akan membuat histori/omzet palsu.
-        const DATE_RE = /^(\\d{4})-(\\d{2})-(\\d{2})$/;
-        const DATE_DMY_RE = /^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})$/;
+        // Tanggal invalid tidak boleh otomatis dianggap sebagai hari ini.
+        const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+        const DATE_DMY_RE = /^(\d{1,2})[\\/.-](\d{1,2})[\\/.-](\d{4})$/;
 
         function pad2(value) {
             return String(value).padStart(2, '0');
@@ -819,8 +818,7 @@
                 return isValidISODate(iso) ? iso : null;
             }
 
-            // Timestamp ISO eksplisit: YYYY-MM-DDTHH:mm...
-            if (/^\\d{4}-\\d{2}-\\d{2}T/.test(raw)) {
+            if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
                 const isoDate = raw.slice(0, 10);
                 return isValidISODate(isoDate) ? isoDate : null;
             }
@@ -838,7 +836,7 @@
             let ms = null;
             if (typeof value === 'number' && Number.isFinite(value)) {
                 ms = value;
-            } else if (typeof value === 'string' && /^\\d+$/.test(value.trim())) {
+            } else if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
                 const numeric = Number(value);
                 if (Number.isFinite(numeric)) ms = numeric;
             } else if (value instanceof Date) {
@@ -859,18 +857,14 @@
         function getLegacyOrderDate(order) {
             if (!order || typeof order !== 'object') return null;
 
-            // Order ID baru dibuat sebagai ORD-<Date.now() dalam base36>.
             if (typeof order.id === 'string' && /^ORD-[0-9A-Z]+$/i.test(order.id)) {
-                const encoded = order.id.slice(4);
-                const timestamp = parseInt(encoded, 36);
+                const timestamp = parseInt(order.id.slice(4), 36);
                 const date = getDateFromTimestamp(timestamp);
                 if (date) return date;
             }
 
-            // Kompatibilitas data lama yang hanya menyimpan "time",
-            // misalnya "28 Sep, 14:32" / "28 Sep 14:32".
             if (typeof order.time === 'string') {
-                const match = order.time.trim().match(/^(\\d{1,2})\\s+([A-Za-zÀ-ÿ]+)(?:[\\s,]+(\\d{1,2}):\\d{2})?/i);
+                const match = order.time.trim().match(/^(\d{1,2})\s+([A-Za-zÀ-ÿ]+)(?:[\s,]+(\d{1,2}):\d{2})?/i);
                 if (match) {
                     const monthMap = {
                         jan: 0, januari: 0,
@@ -921,7 +915,6 @@
             const explicitDate = normalizeISODate(expense.date);
             if (explicitDate) return explicitDate;
 
-            // Legacy: ID pengeluaran dibuat menggunakan Date.now().
             const idDate = getDateFromTimestamp(expense.id);
             if (idDate) return idDate;
 
@@ -950,7 +943,6 @@
 
         function getReportOrders(targetDate) {
             if (!targetDate || isFutureDate(targetDate) || !Array.isArray(orders)) return [];
-
             return orders.filter(order =>
                 order &&
                 order.status === 'selesai' &&
@@ -960,7 +952,6 @@
 
         function getReportExpenses(targetDate) {
             if (!targetDate || isFutureDate(targetDate) || !Array.isArray(expenses)) return [];
-
             return expenses.filter(expense =>
                 expense &&
                 getExpenseDate(expense) === targetDate
