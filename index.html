@@ -989,6 +989,72 @@
             );
         }
 
+        function normalizePayment(value) {
+            return String(value ?? '').trim().toLowerCase();
+        }
+
+        // Satu sumber perhitungan untuk kartu omzet, teks laporan, dan Excel.
+        // Mencegah angka UI dan laporan tertulis berbeda karena logika terpisah.
+        function calculateDailyReport(targetDate) {
+            const date = normalizeISODate(targetDate) || getTodayISO();
+            const result = {
+                date,
+                cash: 0,
+                qris: 0,
+                ojol: 0,
+                shopee: 0,
+                gofood: 0,
+                grab: 0,
+                shift1Cash: 0,
+                shift1Qris: 0,
+                shift2Cash: 0,
+                shift2Qris: 0,
+                expenses: 0,
+                orders: [],
+                expenseItems: []
+            };
+
+            if (isFutureDate(date)) return result;
+
+            result.orders = getReportOrders(date);
+            result.expenseItems = getReportExpenses(date);
+
+            result.orders.forEach(order => {
+                const amount = getSafeAmount(order.total);
+                const payment = normalizePayment(order.payment);
+
+                if (payment === 'cash') {
+                    result.cash += amount;
+                    if (String(order.shift) === '1') result.shift1Cash += amount;
+                    else if (String(order.shift) === '2') result.shift2Cash += amount;
+                } else if (payment === 'qris' || payment === 'tf' || payment === 'transfer') {
+                    result.qris += amount;
+                    if (String(order.shift) === '1') result.shift1Qris += amount;
+                    else if (String(order.shift) === '2') result.shift2Qris += amount;
+                } else if (payment === 'shopeefood' || payment === 'shopee food') {
+                    result.ojol += amount;
+                    result.shopee += amount;
+                } else if (payment === 'gofood' || payment === 'go food') {
+                    result.ojol += amount;
+                    result.gofood += amount;
+                } else if (payment === 'grabfood' || payment === 'grab food') {
+                    result.ojol += amount;
+                    result.grab += amount;
+                }
+            });
+
+            result.expenses = result.expenseItems.reduce(
+                (sum, expense) => sum + getSafeAmount(expense.amount),
+                0
+            );
+
+            result.total = result.cash + result.qris + result.ojol;
+            result.totalCashWithPetty = result.cash + getSafeAmount(pettyCash);
+            result.physicalCash = result.totalCashWithPetty - result.expenses;
+
+            return result;
+        }
+
         // 3. STATE & DATA MANAGEMENT
         function forceArray(data) {
             if (!data) return [];
@@ -1425,87 +1491,60 @@
         }
 
         function renderRevenue() {
-            let tc=0, tq=0, to=0; 
-            let s1c=0, s1q=0, s2c=0, s2q=0, shopee=0, go=0, grab=0;
-            const targetDate = getSelectedDate();
-            const reportIsFuture = isFutureDate(targetDate);
-            const targetOrders = getReportOrders(targetDate);
+            const report = calculateDailyReport(getSelectedDate());
 
-            targetOrders.forEach(o => {
-                const amount = getSafeAmount(o.total);
+            if(document.getElementById('revShift1Cash')) document.getElementById('revShift1Cash').innerText = formatRp(report.shift1Cash);
+            if(document.getElementById('revShift1Qris')) document.getElementById('revShift1Qris').innerText = formatRp(report.shift1Qris);
+            if(document.getElementById('revShift1Total')) document.getElementById('revShift1Total').innerText = formatRp(report.shift1Cash + report.shift1Qris);
 
-                if (o.payment === 'Cash') tc += amount;
-                else if (['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += amount;
-                else if (o.payment === 'QRIS') tq += amount;
+            if(document.getElementById('revShift2Cash')) document.getElementById('revShift2Cash').innerText = formatRp(report.shift2Cash);
+            if(document.getElementById('revShift2Qris')) document.getElementById('revShift2Qris').innerText = formatRp(report.shift2Qris);
+            if(document.getElementById('revShift2Total')) document.getElementById('revShift2Total').innerText = formatRp(report.shift2Cash + report.shift2Qris);
 
-                if (o.payment === 'Shopeefood') shopee += amount;
-                else if (o.payment === 'Gofood') go += amount;
-                else if (o.payment === 'Grabfood') grab += amount;
-                else if (o.shift === "1") {
-                    if (o.payment === 'Cash') s1c += amount;
-                    else if (o.payment === 'QRIS') s1q += amount;
-                } else {
-                    if (o.payment === 'Cash') s2c += amount;
-                    else if (o.payment === 'QRIS') s2q += amount;
-                }
-            });
-            
-            if(document.getElementById('revShift1Cash')) document.getElementById('revShift1Cash').innerText = formatRp(s1c); 
-            if(document.getElementById('revShift1Qris')) document.getElementById('revShift1Qris').innerText = formatRp(s1q); 
-            if(document.getElementById('revShift1Total')) document.getElementById('revShift1Total').innerText = formatRp(s1c + s1q);
-            if(document.getElementById('revShift2Cash')) document.getElementById('revShift2Cash').innerText = formatRp(s2c); 
-            if(document.getElementById('revShift2Qris')) document.getElementById('revShift2Qris').innerText = formatRp(s2q); 
-            if(document.getElementById('revShift2Total')) document.getElementById('revShift2Total').innerText = formatRp(s2c + s2q);
-            
-            if(document.getElementById('revShopee')) document.getElementById('revShopee').innerText = formatRp(shopee); 
-            if(document.getElementById('revGo')) document.getElementById('revGo').innerText = formatRp(go); 
-            if(document.getElementById('revGrab')) document.getElementById('revGrab').innerText = formatRp(grab);
-            if(document.getElementById('revOjolTotal')) document.getElementById('revOjolTotal').innerText = formatRp(shopee + go + grab);
+            if(document.getElementById('revShopee')) document.getElementById('revShopee').innerText = formatRp(report.shopee);
+            if(document.getElementById('revGo')) document.getElementById('revGo').innerText = formatRp(report.gofood);
+            if(document.getElementById('revGrab')) document.getElementById('revGrab').innerText = formatRp(report.grab);
+            if(document.getElementById('revOjolTotal')) document.getElementById('revOjolTotal').innerText = formatRp(report.ojol);
 
-            const targetExpenses = getReportExpenses(targetDate);
-            const expTotal = targetExpenses.reduce((sum, e) => sum + getSafeAmount(e.amount), 0);
+            if(document.getElementById('finalOmzetCash')) document.getElementById('finalOmzetCash').innerText = formatRp(report.cash);
+            if(document.getElementById('finalOmzetQris')) document.getElementById('finalOmzetQris').innerText = formatRp(report.qris);
+            if(document.getElementById('finalOmzetOjol')) document.getElementById('finalOmzetOjol').innerText = formatRp(report.ojol);
+            if(document.getElementById('finalOmzetTotal')) document.getElementById('finalOmzetTotal').innerText = formatRp(report.total);
+            if(document.getElementById('finalUangFisik')) document.getElementById('finalUangFisik').innerText = formatRp(report.physicalCash);
 
-            if (reportIsFuture) {
-                // Future date selalu nol. Jangan pernah menampilkan data dari fallback date.
-                tc = tq = to = s1c = s1q = s2c = s2q = shopee = go = grab = 0;
-            }
-            
-            let tcPetty = tc + pettyCash;
-            let actualDrawerCash = tcPetty - expTotal;
-
-            if(document.getElementById('finalOmzetCash')) document.getElementById('finalOmzetCash').innerText = formatRp(tc);
-            if(document.getElementById('finalOmzetQris')) document.getElementById('finalOmzetQris').innerText = formatRp(tq);
-            if(document.getElementById('finalOmzetOjol')) document.getElementById('finalOmzetOjol').innerText = formatRp(to);
-            if(document.getElementById('finalOmzetTotal')) document.getElementById('finalOmzetTotal').innerText = formatRp(tc + tq + to);
-            if(document.getElementById('finalUangFisik')) document.getElementById('finalUangFisik').innerText = formatRp(actualDrawerCash);
-            
             if(document.getElementById('pettyCashStatus')) document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash);
             if(document.getElementById('inputPettyCash') && document.getElementById('inputPettyCash').value === "") document.getElementById('inputPettyCash').value = pettyCash;
         }
-
         function getReportString() {
-            const dateStr = getSelectedDate();
-            let tc = 0, tq = 0, to = 0; 
-            
-            if (!isFutureDate(dateStr)) {
-                getReportOrders(dateStr).forEach(o => {
-                    const amount = getSafeAmount(o.total);
-                    if (o.payment === 'Cash') tc += amount;
-                    else if (['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += amount;
-                    else if (o.payment === 'QRIS') tq += amount;
-                });
-            }
+            const report = calculateDailyReport(getSelectedDate());
 
-            const targetExpenses = getReportExpenses(dateStr);
-            const tcPetty = tc + pettyCash;
-            const expTotal = targetExpenses.reduce((sum, e) => sum + getSafeAmount(e.amount), 0);
-            const sisa = tcPetty - expTotal;
-            
-            let report = `*OMZET TGL ${dateStr}*\n\nCASH: ${formatRpText(tc)}\nQRIS: ${formatRpText(tq)}\nOJOL: ${formatRpText(to)}\nTOTAL: ${formatRpText(tc+tq+to)}\n__________________________\nCASH: ${formatRpText(tc)}\nPETTY CASH: ${formatRpText(pettyCash)}\nTOTAL CASH: ${formatRpText(tcPetty)}\n__________________________\n*PENGELUARAN*\n\n`;
-            if(targetExpenses.length===0) report += `(Tidak ada)\n`; else targetExpenses.forEach(e => { report += `# ${e.name} : ${formatRpText(e.amount)}\n`; });
-            report += `TOTAL KELUAR: ${formatRpText(expTotal)}\n_________________________\nSISA CASH (FISIK LACI): ${formatRpText(sisa)}\n\n*(${formatRpText(sisa)})*`; return report;
+            let text = `*OMZET TGL ${report.date}*
+
+CASH: ${formatRpText(report.cash)}
+QRIS: ${formatRpText(report.qris)}
+OJOL: ${formatRpText(report.ojol)}
+TOTAL: ${formatRpText(report.total)}
+__________________________
+CASH: ${formatRpText(report.cash)}
+PETTY CASH: ${formatRpText(pettyCash)}
+TOTAL CASH: ${formatRpText(report.totalCashWithPetty)}
+__________________________
+*PENGELUARAN*
+
+`;
+
+            if(report.expenseItems.length === 0) text += `(Tidak ada)\n`;
+            else report.expenseItems.forEach(e => {
+                text += `# ${e.name} : ${formatRpText(getSafeAmount(e.amount))}\n`;
+            });
+
+            text += `TOTAL KELUAR: ${formatRpText(report.expenses)}
+_________________________
+SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
+
+*(${formatRpText(report.physicalCash)})*`;
+            return text;
         }
-        
         function generateReport() { navigator.clipboard.writeText(getReportString()).then(() => showToast("Laporan dicopy", "success")).catch(e => showToast("Gagal copy", "error")); }
         
         function generateRealExcelBlob() {
