@@ -856,17 +856,63 @@
             return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
         }
 
+        function getLegacyOrderDate(order) {
+            if (!order || typeof order !== 'object') return null;
+
+            // Order ID baru dibuat sebagai ORD-<Date.now() dalam base36>.
+            if (typeof order.id === 'string' && /^ORD-[0-9A-Z]+$/i.test(order.id)) {
+                const encoded = order.id.slice(4);
+                const timestamp = parseInt(encoded, 36);
+                const date = getDateFromTimestamp(timestamp);
+                if (date) return date;
+            }
+
+            // Kompatibilitas data lama yang hanya menyimpan "time",
+            // misalnya "28 Sep, 14:32" / "28 Sep 14:32".
+            if (typeof order.time === 'string') {
+                const match = order.time.trim().match(/^(\\d{1,2})\\s+([A-Za-zÀ-ÿ]+)(?:[\\s,]+(\\d{1,2}):\\d{2})?/i);
+                if (match) {
+                    const monthMap = {
+                        jan: 0, januari: 0,
+                        feb: 1, februari: 1,
+                        mar: 2, maret: 2,
+                        apr: 3, april: 3,
+                        mei: 4, may: 4,
+                        jun: 5, juni: 5,
+                        jul: 6, juli: 6,
+                        agu: 7, agt: 7, agustus: 7, aug: 7,
+                        sep: 8, sept: 8, september: 8,
+                        okt: 9, oct: 9, oktober: 9,
+                        nov: 10, november: 10,
+                        des: 11, dec: 11, desember: 11
+                    };
+                    const monthKey = match[2].toLowerCase();
+                    const month = monthMap[monthKey] ?? monthMap[monthKey.slice(0, 3)];
+                    if (month !== undefined) {
+                        const year = new Date().getFullYear();
+                        const iso = `${year}-${pad2(month + 1)}-${pad2(Number(match[1]))}`;
+                        if (isValidISODate(iso)) return iso;
+                    }
+                }
+            }
+
+            return null;
+        }
+
         function getOrderDate(order) {
             if (!order || typeof order !== 'object') return null;
 
             const explicitDate = normalizeISODate(order.date);
             if (explicitDate) return explicitDate;
 
-            return getDateFromTimestamp(
+            const timestampDate = getDateFromTimestamp(
                 order.createdAt ??
                 order.timestamp ??
                 order.created_at
             );
+            if (timestampDate) return timestampDate;
+
+            return getLegacyOrderDate(order);
         }
 
         function getExpenseDate(expense) {
@@ -875,10 +921,9 @@
             const explicitDate = normalizeISODate(expense.date);
             if (explicitDate) return explicitDate;
 
-            // Data lama: ID pengeluaran dibuat dari Date.now().
-            if (typeof expense.id === 'number' && Number.isFinite(expense.id)) {
-                return getDateFromTimestamp(expense.id);
-            }
+            // Legacy: ID pengeluaran dibuat menggunakan Date.now().
+            const idDate = getDateFromTimestamp(expense.id);
+            if (idDate) return idDate;
 
             return getDateFromTimestamp(
                 expense.createdAt ??
