@@ -2213,6 +2213,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     orders[idx].customer = cust; 
                     orders[idx].status = status; 
                     orders[idx].payment = paymentMethod; 
+                    orders[idx].updatedAt = Date.now();
                     orderToPrint = orders[idx];
                 } 
             } else { 
