@@ -579,31 +579,137 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.1"; 
+        const APP_VERSION = "1.0.2";
+        const VERSION_CHECK_PATH = 'system_config/latest_version';
+
+        function compareVersions(a, b) {
+            const normalize = (value) => String(value ?? '')
+                .trim()
+                .replace(/^v/i, '')
+                .split('.')
+                .map(part => {
+                    const n = Number.parseInt(part, 10);
+                    return Number.isFinite(n) ? n : 0;
+                });
+
+            const left = normalize(a);
+            const right = normalize(b);
+            const length = Math.max(left.length, right.length);
+
+            for (let i = 0; i < length; i++) {
+                const l = left[i] ?? 0;
+                const r = right[i] ?? 0;
+                if (l > r) return 1;
+                if (l < r) return -1;
+            }
+            return 0;
+        }
+
+        function isValidVersion(value) {
+            return /^v?\d+(?:\.\d+){0,3}$/.test(String(value ?? '').trim());
+        }
+
+        function hideUpdateOverlay() {
+            const overlay = document.getElementById('updateOverlay');
+            if (overlay) overlay.style.display = 'none';
+        }
+
+        function showUpdateOverlay(cloudVersion) {
+            const badge = document.getElementById('versionInfoBadge');
+            const overlay = document.getElementById('updateOverlay');
+            if (!badge || !overlay) return;
+
+            badge.innerText = `Versi Anda: ${APP_VERSION} ➔ Pusat: ${cloudVersion}`;
+            overlay.style.display = 'flex';
+        }
+
+        let versionCheckStarted = false;
 
         function checkAppVersion() {
-            db.ref('system_config/latest_version').on('value', (snapshot) => {
-                const cloudVersion = snapshot.val();
-                if (cloudVersion && cloudVersion !== APP_VERSION) {
-                    document.getElementById('versionInfoBadge').innerText = `Versi Anda: ${APP_VERSION} ➔ Pusat: ${cloudVersion}`;
-                    document.getElementById('updateOverlay').style.display = 'flex';
+            if (versionCheckStarted) return;
+            versionCheckStarted = true;
+
+            db.ref(VERSION_CHECK_PATH).on('value', (snapshot) => {
+                const cloudVersion = String(snapshot.val() ?? '').trim();
+
+                if (!cloudVersion || !isValidVersion(cloudVersion)) {
+                    hideUpdateOverlay();
+                    return;
                 }
+
+                if (compareVersions(cloudVersion, APP_VERSION) > 0) {
+                    showUpdateOverlay(cloudVersion);
+                } else {
+                    hideUpdateOverlay();
+                }
+            }, (error) => {
+                console.warn('[VersionChecker] Gagal membaca versi pusat:', error);
+                hideUpdateOverlay();
             });
         }
 
-        function hardRefreshApp() {
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                    for(let registration of registrations) registration.unregister();
-                });
+        async function unregisterLegacyServiceWorkers() {
+            if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+
+            try {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                const results = await Promise.allSettled(
+                    registrations.map(registration => registration.unregister())
+                );
+
+                const failed = results.filter(result => result.status === 'rejected');
+                if (failed.length > 0) {
+                    console.debug('[SWCleanup] Beberapa Service Worker tidak dapat di-unregister.');
+                }
+            } catch (error) {
+                console.debug('[SWCleanup] Cleanup Service Worker dilewati:', error?.name || 'DOMException');
             }
-            if ('caches' in window) {
-                caches.keys().then((keyList) => {
-                    return Promise.all(keyList.map((key) => caches.delete(key)));
-                });
+        }
+
+        async function clearLegacyAppCache() {
+            if (!('caches' in window)) return;
+
+            try {
+                const keys = await caches.keys();
+                const results = await Promise.allSettled(keys.map(key => caches.delete(key)));
+                const failed = results.filter(result => result.status === 'rejected');
+                if (failed.length > 0) {
+                    console.debug('[CacheCleanup] Beberapa cache tidak dapat dihapus.');
+                }
+            } catch (error) {
+                console.debug('[CacheCleanup] Cleanup cache dilewati:', error?.name || 'Error');
             }
-            showToast("Mendownload update...", "info");
-            setTimeout(() => { window.location.reload(true); }, 800);
+        }
+
+        function cleanupLegacyPwaStorageInBackground() {
+            unregisterLegacyServiceWorkers().catch(() => {});
+        }
+
+        async function hardRefreshApp() {
+            const button = document.querySelector('#updateOverlay button');
+            if (button) {
+                button.disabled = true;
+                button.innerText = '⏳ MEMBERSIHKAN CACHE...';
+            }
+
+            try {
+                await unregisterLegacyServiceWorkers();
+                await clearLegacyAppCache();
+
+                showToast("Mendownload update...", "info");
+
+                const url = new URL(window.location.href);
+                url.searchParams.set('app_version', APP_VERSION);
+                url.searchParams.set('_refresh', String(Date.now()));
+                window.location.replace(url.toString());
+            } catch (error) {
+                console.error('[HardRefresh]', error);
+                if (button) {
+                    button.disabled = false;
+                    button.innerText = '🔄 REFRESH SEKARANG';
+                }
+                showToast("Gagal membersihkan cache. Silakan refresh browser.", "error");
+            }
         }
 
         // ============================================================================
@@ -1583,7 +1689,8 @@
             
             fetchPosDataFromFirebase(); fetchProductsFromFirebase(); checkAutoShift(); 
             
-            // CEK UPDATE APP (VERSION CONTROLLER)
+            cleanupLegacyPwaStorageInBackground();
+
             checkAppVersion();
         };
     </script>
