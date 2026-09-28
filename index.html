@@ -1355,11 +1355,28 @@ let settings = readLocalJSON('settings', defaultSettings);
         }
 
         function applyV2Orders(data) {
-            const cloudOrders = recordsFromV2(data);
+            const cloud = data && typeof data === 'object' ? data : {};
+            const deletedIds = new Set();
+
+            Object.values(cloud).forEach(record => {
+                if (record && record._deleted === true && record.id !== undefined) {
+                    const id = String(record.id);
+                    deletedIds.add(id);
+                    lastSyncedOrderRevision.set(id, getRecordRevision(record));
+                }
+            });
+
+            if (deletedIds.size > 0) {
+                orders = orders.filter(record => !deletedIds.has(String(record.id)));
+            }
+
+            const cloudOrders = recordsFromV2(cloud);
             orders = mergeCloudRecords(cloudOrders, orders);
+
             orders.forEach(record => {
                 lastSyncedOrderRevision.set(String(record.id), getRecordRevision(record));
             });
+
             persistLocalData('orders', orders);
 
             if (isPageActive('pos')) renderPOS(currentPosFilter);
@@ -1368,11 +1385,28 @@ let settings = readLocalJSON('settings', defaultSettings);
         }
 
         function applyV2Expenses(data) {
-            const cloudExpenses = recordsFromV2(data);
+            const cloud = data && typeof data === 'object' ? data : {};
+            const deletedIds = new Set();
+
+            Object.values(cloud).forEach(record => {
+                if (record && record._deleted === true && record.id !== undefined) {
+                    const id = String(record.id);
+                    deletedIds.add(id);
+                    lastSyncedExpenseRevision.set(id, getRecordRevision(record));
+                }
+            });
+
+            if (deletedIds.size > 0) {
+                expenses = expenses.filter(record => !deletedIds.has(String(record.id)));
+            }
+
+            const cloudExpenses = recordsFromV2(cloud);
             expenses = mergeCloudRecords(cloudExpenses, expenses);
+
             expenses.forEach(record => {
                 lastSyncedExpenseRevision.set(String(record.id), getRecordRevision(record));
             });
+
             persistLocalData('expenses', expenses);
 
             if (isPageActive('expenses')) renderExpenses();
