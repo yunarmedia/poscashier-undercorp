@@ -579,14 +579,19 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.2";
+        const APP_VERSION = "1.0.3";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
+        const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
+        // ------------------------------------------------------------------------
+        // VERSION UTILITIES
+        // ------------------------------------------------------------------------
+        // Membandingkan versi numerik: 1.0.10 > 1.0.2, bukan perbandingan string.
         function compareVersions(a, b) {
             const normalize = (value) => String(value ?? '')
                 .trim()
                 .replace(/^v/i, '')
-                .split('.')
+                .split(/[.-]/)
                 .map(part => {
                     const n = Number.parseInt(part, 10);
                     return Number.isFinite(n) ? n : 0;
@@ -606,7 +611,7 @@
         }
 
         function isValidVersion(value) {
-            return /^v?\d+(?:\.\d+){0,3}$/.test(String(value ?? '').trim());
+            return /^v?\d+(?:\.\d+){0,3}(?:[-.]?[A-Za-z0-9]+)?$/.test(String(value ?? '').trim());
         }
 
         function hideUpdateOverlay() {
@@ -623,6 +628,12 @@
             overlay.style.display = 'flex';
         }
 
+        // ------------------------------------------------------------------------
+        // VERSION CHECKER
+        // UPDATE HANYA jika versi pusat > versi lokal.
+        // Versi sama / lokal lebih tinggi = tidak ada popup.
+        // Listener Firebase hanya dipasang sekali.
+        // ------------------------------------------------------------------------
         let versionCheckStarted = false;
 
         function checkAppVersion() {
@@ -630,61 +641,95 @@
             versionCheckStarted = true;
 
             db.ref(VERSION_CHECK_PATH).on('value', (snapshot) => {
-                const cloudVersion = String(snapshot.val() ?? '').trim();
+                const rawCloudVersion = snapshot.val();
+                const cloudVersion = String(rawCloudVersion ?? '').trim();
 
+                // Config kosong / invalid tidak boleh memicu update.
                 if (!cloudVersion || !isValidVersion(cloudVersion)) {
                     hideUpdateOverlay();
                     return;
                 }
 
-                if (compareVersions(cloudVersion, APP_VERSION) > 0) {
+                const comparison = compareVersions(cloudVersion, APP_VERSION);
+
+                if (comparison > 0) {
                     showUpdateOverlay(cloudVersion);
                 } else {
+                    // Cloud sama atau lebih rendah: JANGAN tampilkan popup.
                     hideUpdateOverlay();
                 }
             }, (error) => {
                 console.warn('[VersionChecker] Gagal membaca versi pusat:', error);
+                // Kegagalan jaringan tidak boleh mengganggu kasir dengan popup.
                 hideUpdateOverlay();
             });
         }
 
-        async function unregisterLegacyServiceWorkers() {
-            if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
-
-            try {
-                const registrations = await navigator.serviceWorker.getRegistrations();
-                const results = await Promise.allSettled(
-                    registrations.map(registration => registration.unregister())
-                );
-
-                const failed = results.filter(result => result.status === 'rejected');
-                if (failed.length > 0) {
-                    console.debug('[SWCleanup] Beberapa Service Worker tidak dapat di-unregister.');
-                }
-            } catch (error) {
-                console.debug('[SWCleanup] Cleanup Service Worker dilewati:', error?.name || 'DOMException');
-            }
-        }
-
+        // ------------------------------------------------------------------------
+        // SERVICE WORKER / CACHE CLEANUP
+        // File aplikasi ini tidak mendaftarkan SW baru. Jika ada SW lama dari
+        // deployment sebelumnya, lepaskan kontrolnya secara aman.
+        // ------------------------------------------------------------------------
         async function clearLegacyAppCache() {
             if (!('caches' in window)) return;
 
             try {
                 const keys = await caches.keys();
-                const results = await Promise.allSettled(keys.map(key => caches.delete(key)));
-                const failed = results.filter(result => result.status === 'rejected');
-                if (failed.length > 0) {
-                    console.debug('[CacheCleanup] Beberapa cache tidak dapat dihapus.');
-                }
+                await Promise.all(keys.map(key => caches.delete(key)));
             } catch (error) {
-                console.debug('[CacheCleanup] Cleanup cache dilewati:', error?.name || 'Error');
+                console.warn('[CacheCleanup] Gagal membersihkan cache:', error);
             }
         }
 
-        function cleanupLegacyPwaStorageInBackground() {
-            unregisterLegacyServiceWorkers().catch(() => {});
+        async function unregisterLegacyServiceWorkers() {
+            // Service Worker hanya dapat dikelola pada secure context (HTTPS/localhost).
+            // Beberapa WebView/Android browser dapat melempar DOMException saat API ini
+            // dipanggil meskipun navigator.serviceWorker tersedia. Jangan ganggu POS.
+            if (!('serviceWorker' in navigator) || !window.isSecureContext) return false;
+
+            try {
+                const getRegistrations = navigator.serviceWorker.getRegistrations;
+                if (typeof getRegistrations !== 'function') return false;
+
+                const registrations = await getRegistrations.call(navigator.serviceWorker);
+                if (!Array.isArray(registrations) || registrations.length === 0) return true;
+
+                await Promise.allSettled(
+                    registrations.map(registration => {
+                        try {
+                            return registration.unregister();
+                        } catch (_) {
+                            return false;
+                        }
+                    })
+                );
+                return true;
+            } catch (_) {
+                // DOMException dari browser/WebView tidak boleh membuat error console
+                // atau menghentikan proses boot/update POS.
+                return false;
+            }
         }
 
+        async function cleanupLegacyPwaStorage() {
+            await unregisterLegacyServiceWorkers();
+            await clearLegacyAppCache();
+        }
+
+        // Pada startup cukup lepaskan Service Worker lama. Cache tidak dihapus
+        // setiap startup karena itu dapat mengganggu cache asset yang tidak terkait.
+        function cleanupLegacyPwaStorageInBackground() {
+            unregisterLegacyServiceWorkers().catch(error => {
+                console.warn('[PWA Cleanup]', error);
+            });
+        }
+
+        // ------------------------------------------------------------------------
+        // HARD UPDATE
+        // Bersihkan SW/cache -> reload sekali dengan cache-busting query.
+        // Tidak menggunakan location.reload(true) karena parameter forceReload
+        // sudah obsolete dan tidak menjamin bypass HTTP cache.
+        // ------------------------------------------------------------------------
         async function hardRefreshApp() {
             const button = document.querySelector('#updateOverlay button');
             if (button) {
@@ -693,22 +738,25 @@
             }
 
             try {
-                await unregisterLegacyServiceWorkers();
-                await clearLegacyAppCache();
+                sessionStorage.setItem(UPDATE_RELOAD_FLAG, '1');
+                await cleanupLegacyPwaStorage();
 
-                showToast("Mendownload update...", "info");
+                showToast('Mendownload update...', 'info');
 
                 const url = new URL(window.location.href);
                 url.searchParams.set('app_version', APP_VERSION);
                 url.searchParams.set('_refresh', String(Date.now()));
+
+                // replace() mencegah history bertambah setiap update.
                 window.location.replace(url.toString());
             } catch (error) {
                 console.error('[HardRefresh]', error);
+                sessionStorage.removeItem(UPDATE_RELOAD_FLAG);
                 if (button) {
                     button.disabled = false;
                     button.innerText = '🔄 REFRESH SEKARANG';
                 }
-                showToast("Gagal membersihkan cache. Silakan refresh browser.", "error");
+                showToast('Gagal membersihkan cache. Silakan refresh browser.', 'error');
             }
         }
 
@@ -777,10 +825,13 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
-        // 2. TANGGAL STANDAR ISO (YYYY-MM-DD)
-        // Tanggal invalid tidak boleh otomatis dianggap sebagai hari ini.
+        // 2. TANGGAL STANDAR — SEMUA LOGIKA LAPORAN MENGGUNAKAN YYYY-MM-DD
+        // Jangan pernah fallback ke "hari ini" untuk data transaksi/pengeluaran.
+        // Jika tanggal data tidak valid/tidak diketahui, hasilnya null sehingga data
+        // tersebut TIDAK akan masuk ke laporan tanggal mana pun secara fiktif.
+
         const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
-        const DATE_DMY_RE = /^(\d{1,2})[\\/.-](\d{1,2})[\\/.-](\d{4})$/;
+        const DATE_DMY_RE = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/;
 
         function pad2(value) {
             return String(value).padStart(2, '0');
@@ -806,11 +857,14 @@
             }
 
             if (typeof value !== 'string') return null;
+
             const raw = value.trim();
             if (!raw) return null;
 
+            // Format canonical aplikasi: YYYY-MM-DD.
             if (isValidISODate(raw)) return raw;
 
+            // Format Indonesia: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY.
             const dmy = raw.match(DATE_DMY_RE);
             if (dmy) {
                 const [, d, m, y] = dmy;
@@ -818,6 +872,8 @@
                 return isValidISODate(iso) ? iso : null;
             }
 
+            // Timestamp ISO seperti 2026-09-29T03:15:00.000Z.
+            // Gunakan komponen tanggal lokal hanya jika timestamp memang eksplisit.
             if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
                 const isoDate = raw.slice(0, 10);
                 return isValidISODate(isoDate) ? isoDate : null;
@@ -832,81 +888,48 @@
 
         function getDateFromTimestamp(value) {
             if (value === null || value === undefined || value === '') return null;
-
             let ms = null;
-            if (typeof value === 'number' && Number.isFinite(value)) {
-                ms = value;
-            } else if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
-                const numeric = Number(value);
-                if (Number.isFinite(numeric)) ms = numeric;
-            } else if (value instanceof Date) {
-                ms = value.getTime();
-            } else if (typeof value === 'string') {
-                const parsed = Date.parse(value);
-                if (!Number.isNaN(parsed)) ms = parsed;
-            }
-
+            if (typeof value === 'number' && Number.isFinite(value)) ms = value;
+            else if (typeof value === 'string') {
+                const raw = value.trim();
+                if (/^\d+$/.test(raw)) {
+                    const numeric = Number(raw);
+                    if (Number.isFinite(numeric)) ms = numeric;
+                } else {
+                    const parsed = Date.parse(raw);
+                    if (!Number.isNaN(parsed)) ms = parsed;
+                }
+            } else if (value instanceof Date) ms = value.getTime();
             if (ms === null || !Number.isFinite(ms)) return null;
-
             const d = new Date(ms);
             if (Number.isNaN(d.getTime())) return null;
-
             return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
         }
 
-        function getLegacyOrderDate(order) {
+        function getOrderDate(order) {
             if (!order || typeof order !== 'object') return null;
-
+            const explicitDate = normalizeISODate(order.date);
+            if (explicitDate) return explicitDate;
+            const timestampDate = getDateFromTimestamp(order.createdAt ?? order.timestamp ?? order.created_at);
+            if (timestampDate) return timestampDate;
             if (typeof order.id === 'string' && /^ORD-[0-9A-Z]+$/i.test(order.id)) {
                 const timestamp = parseInt(order.id.slice(4), 36);
                 const date = getDateFromTimestamp(timestamp);
                 if (date) return date;
             }
-
             if (typeof order.time === 'string') {
                 const match = order.time.trim().match(/^(\d{1,2})\s+([A-Za-zÀ-ÿ]+)(?:[\s,]+(\d{1,2}):\d{2})?/i);
                 if (match) {
-                    const monthMap = {
-                        jan: 0, januari: 0,
-                        feb: 1, februari: 1,
-                        mar: 2, maret: 2,
-                        apr: 3, april: 3,
-                        mei: 4, may: 4,
-                        jun: 5, juni: 5,
-                        jul: 6, juli: 6,
-                        agu: 7, agt: 7, agustus: 7, aug: 7,
-                        sep: 8, sept: 8, september: 8,
-                        okt: 9, oct: 9, oktober: 9,
-                        nov: 10, november: 10,
-                        des: 11, dec: 11, desember: 11
-                    };
-                    const monthKey = match[2].toLowerCase();
-                    const month = monthMap[monthKey] ?? monthMap[monthKey.slice(0, 3)];
+                    const monthMap = {jan:0,januari:0,feb:1,februari:1,mar:2,maret:2,apr:3,april:3,mei:4,may:4,jun:5,juni:5,jul:6,juli:6,agu:7,agt:7,agustus:7,aug:7,sep:8,sept:8,september:8,okt:9,oct:9,oktober:9,nov:10,november:10,des:11,dec:11,desember:11};
+                    const key = match[2].toLowerCase();
+                    const month = monthMap[key] ?? monthMap[key.slice(0,3)];
                     if (month !== undefined) {
-                        const year = new Date().getFullYear();
-                        const iso = `${year}-${pad2(month + 1)}-${pad2(Number(match[1]))}`;
+                        const iso = `${new Date().getFullYear()}-${pad2(month+1)}-${pad2(Number(match[1]))}`;
                         if (isValidISODate(iso)) return iso;
                     }
                 }
             }
-
             return null;
-        }
-
-        function getOrderDate(order) {
-            if (!order || typeof order !== 'object') return null;
-
-            const explicitDate = normalizeISODate(order.date);
-            if (explicitDate) return explicitDate;
-
-            const timestampDate = getDateFromTimestamp(
-                order.createdAt ??
-                order.timestamp ??
-                order.created_at
-            );
-            if (timestampDate) return timestampDate;
-
-            return getLegacyOrderDate(order);
         }
 
         function getExpenseDate(expense) {
@@ -915,8 +938,14 @@
             const explicitDate = normalizeISODate(expense.date);
             if (explicitDate) return explicitDate;
 
-            const idDate = getDateFromTimestamp(expense.id);
-            if (idDate) return idDate;
+            // Legacy expense: ID Date.now() boleh digunakan karena memang dibuat
+            // sebagai timestamp milidetik oleh addExpense().
+            if (typeof expense.id === 'number' && Number.isFinite(expense.id)) {
+                return getDateFromTimestamp(expense.id);
+            }
+            if (typeof expense.id === 'string' && /^\d+$/.test(expense.id.trim())) {
+                return getDateFromTimestamp(expense.id.trim());
+            }
 
             return getDateFromTimestamp(
                 expense.createdAt ??
@@ -943,6 +972,7 @@
 
         function getReportOrders(targetDate) {
             if (!targetDate || isFutureDate(targetDate) || !Array.isArray(orders)) return [];
+
             return orders.filter(order =>
                 order &&
                 order.status === 'selesai' &&
@@ -952,6 +982,7 @@
 
         function getReportExpenses(targetDate) {
             if (!targetDate || isFutureDate(targetDate) || !Array.isArray(expenses)) return [];
+
             return expenses.filter(expense =>
                 expense &&
                 getExpenseDate(expense) === targetDate
@@ -966,12 +997,9 @@
         }
 
         let cart = []; 
-        let currentPosFilter = 'Semua';
-        let editingOrderId = null;
+        let currentPosFilter = 'Semua';        let editingOrderId = null;
         let knownOrderIds = new Set();
         let isInitialLoad = true;
-        const cloudBaselineIds = { orders: new Set(), expenses: new Set() };
-        const destructiveSyncKeys = new Set();
         
         window.currentHistoryFilter = 'selesai';
         window.currentSubtotal = 0;
@@ -1012,47 +1040,21 @@
         }
 
         // 4. SINKRONISASI CLOUD (NON-BLOCKING ASYNC)
-        function syncToCloud(key, dataObj, options = {}) {
+        function syncToCloud(key, dataObj) {
             if (isInitialLoad) return;
 
-            setTimeout(async () => {
+            setTimeout(() => {
                 try {
                     let localData = JSON.parse(JSON.stringify(dataObj));
-
-                    if (key === 'orders' || key === 'expenses') {
-                        const baselineIds = cloudBaselineIds[key];
-                        const localIds = new Set(
-                            Array.isArray(localData)
-                                ? localData.map(item => String(item?.id ?? '')).filter(Boolean)
-                                : []
-                        );
-
-                        // Safety lock: never overwrite a larger cloud collection with
-                        // a smaller local collection unless an explicit destructive
-                        // operation requested it.
-                        if (!options.allowDestructive && baselineIds.size > 0) {
-                            const missingBaselineIds = [...baselineIds].filter(id => !localIds.has(id));
-                            if (missingBaselineIds.length > 0) {
-                                console.warn('[CloudSafety] Write diblokir karena data lokal lebih kecil dari baseline Cloud.', {
-                                    key,
-                                    missing: missingBaselineIds.length
-                                });
-                                showToast('⚠️ Sinkronisasi dibatalkan agar data lama tidak tertimpa.', 'warning');
-                                return;
-                            }
-                        }
-                    }
-
                     if (key === 'expenses' && Array.isArray(localData)) {
                         localData.forEach(exp => { if (exp.photo) exp.photo = "TERSIMPAN_DI_CLOUD"; });
                     }
-
-                    localStorage.setItem('pos_' + key, JSON.stringify(localData));
-                    await db.ref('pos_data/' + key).set(localData);
-                } catch (err) {
-                    console.error('[CloudSync]', err);
-                    showToast("Gagal terkirim ke Cloud!", "warning");
-                }
+                    localStorage.setItem('pos_' + key, JSON.stringify(localData)); 
+                } catch (e) {}
+                
+                db.ref('pos_data/' + key).set(dataObj).catch(err => { 
+                    showToast("Gagal terkirim ke Cloud!", "warning"); 
+                });
             }, 50);
         }
 
@@ -1063,20 +1065,6 @@
                 if (data) {
                     let cloudOrders = forceArray(data.orders);
                     let cloudExpenses = forceArray(data.expenses);
-
-                    cloudBaselineIds.orders.clear();
-                    cloudOrders.forEach(item => {
-                        if (item && item.id !== undefined && item.id !== null) {
-                            cloudBaselineIds.orders.add(String(item.id));
-                        }
-                    });
-
-                    cloudBaselineIds.expenses.clear();
-                    cloudExpenses.forEach(item => {
-                        if (item && item.id !== undefined && item.id !== null) {
-                            cloudBaselineIds.expenses.add(String(item.id));
-                        }
-                    });
                     
                     if (cloudOrders.length > 0 || orders.length === 0) orders = cloudOrders;
                     if (cloudExpenses.length > 0 || expenses.length === 0) expenses = cloudExpenses;
@@ -1337,7 +1325,17 @@
                 }
                 showToast("Pengeluaran berhasil di-update!", "success");
             } else {
-                expenses.push({ id: Date.now(), payment: payment, category: category, name: name, amount: parseInt(amount), date: inputDate, photo: photo }); 
+                const createdAt = Date.now();
+                expenses.push({
+                    id: createdAt,
+                    payment: payment,
+                    category: category,
+                    name: name,
+                    amount: getSafeAmount(amount),
+                    date: inputDate,
+                    createdAt: createdAt,
+                    photo: photo
+                });
                 showToast("Pengeluaran baru dicatat!", "success");
             }
             
@@ -1390,7 +1388,7 @@
         function deleteExpense(id) { 
             if(confirm("Hapus catatan ini?")) { 
                 expenses = expenses.filter(e => e.id !== id); 
-                syncToCloud('expenses', expenses, { allowDestructive: true }); 
+                syncToCloud('expenses', expenses); 
                 if (isPageActive('expenses')) renderExpenses(); 
                 if (isPageActive('revenue')) renderRevenue(); 
                 showToast("Dihapus", "success"); 
@@ -1429,23 +1427,28 @@
         function renderRevenue() {
             let tc=0, tq=0, to=0; 
             let s1c=0, s1q=0, s2c=0, s2q=0, shopee=0, go=0, grab=0;
-            let targetDate = getSelectedDate(); 
+            const targetDate = getSelectedDate();
+            const reportIsFuture = isFutureDate(targetDate);
+            const targetOrders = getReportOrders(targetDate);
 
-            if(orders && Array.isArray(orders)) {
-                orders.forEach(o => {
-                    if (o.status === 'selesai' && getOrderDate(o) === targetDate) {
-                        if (o.payment === 'Cash') tc += o.total;
-                        else if(['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += o.total;
-                        else tq += o.total;
+            targetOrders.forEach(o => {
+                const amount = getSafeAmount(o.total);
 
-                        if(o.payment === 'Shopeefood') shopee+=o.total;
-                        else if(o.payment === 'Gofood') go+=o.total;
-                        else if(o.payment === 'Grabfood') grab+=o.total;
-                        else if (o.shift === "1") { if(o.payment==='Cash') s1c+=o.total; else s1q+=o.total; }
-                        else { if(o.payment==='Cash') s2c+=o.total; else s2q+=o.total; }
-                    }
-                });
-            }
+                if (o.payment === 'Cash') tc += amount;
+                else if (['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += amount;
+                else if (o.payment === 'QRIS') tq += amount;
+
+                if (o.payment === 'Shopeefood') shopee += amount;
+                else if (o.payment === 'Gofood') go += amount;
+                else if (o.payment === 'Grabfood') grab += amount;
+                else if (o.shift === "1") {
+                    if (o.payment === 'Cash') s1c += amount;
+                    else if (o.payment === 'QRIS') s1q += amount;
+                } else {
+                    if (o.payment === 'Cash') s2c += amount;
+                    else if (o.payment === 'QRIS') s2q += amount;
+                }
+            });
             
             if(document.getElementById('revShift1Cash')) document.getElementById('revShift1Cash').innerText = formatRp(s1c); 
             if(document.getElementById('revShift1Qris')) document.getElementById('revShift1Qris').innerText = formatRp(s1q); 
@@ -1459,8 +1462,13 @@
             if(document.getElementById('revGrab')) document.getElementById('revGrab').innerText = formatRp(grab);
             if(document.getElementById('revOjolTotal')) document.getElementById('revOjolTotal').innerText = formatRp(shopee + go + grab);
 
-            let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === targetDate) : [];
-            let expTotal = targetExpenses.reduce((s, e) => s + e.amount, 0);
+            const targetExpenses = getReportExpenses(targetDate);
+            const expTotal = targetExpenses.reduce((sum, e) => sum + getSafeAmount(e.amount), 0);
+
+            if (reportIsFuture) {
+                // Future date selalu nol. Jangan pernah menampilkan data dari fallback date.
+                tc = tq = to = s1c = s1q = s2c = s2q = shopee = go = grab = 0;
+            }
             
             let tcPetty = tc + pettyCash;
             let actualDrawerCash = tcPetty - expTotal;
@@ -1479,18 +1487,19 @@
             const dateStr = getSelectedDate();
             let tc = 0, tq = 0, to = 0; 
             
-            if(orders && Array.isArray(orders)) {
-                orders.forEach(o => { 
-                    if (o.status === 'selesai' && getOrderDate(o) === dateStr) { 
-                        if (o.payment === 'Cash') tc += o.total; 
-                        else if(['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += o.total; 
-                        else tq += o.total; 
-                    } 
+            if (!isFutureDate(dateStr)) {
+                getReportOrders(dateStr).forEach(o => {
+                    const amount = getSafeAmount(o.total);
+                    if (o.payment === 'Cash') tc += amount;
+                    else if (['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += amount;
+                    else if (o.payment === 'QRIS') tq += amount;
                 });
             }
 
-            let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === dateStr) : [];
-            let tcPetty = tc + pettyCash, expTotal = targetExpenses.reduce((s, e) => s + e.amount, 0); let sisa = tcPetty - expTotal;
+            const targetExpenses = getReportExpenses(dateStr);
+            const tcPetty = tc + pettyCash;
+            const expTotal = targetExpenses.reduce((sum, e) => sum + getSafeAmount(e.amount), 0);
+            const sisa = tcPetty - expTotal;
             
             let report = `*OMZET TGL ${dateStr}*\n\nCASH: ${formatRpText(tc)}\nQRIS: ${formatRpText(tq)}\nOJOL: ${formatRpText(to)}\nTOTAL: ${formatRpText(tc+tq+to)}\n__________________________\nCASH: ${formatRpText(tc)}\nPETTY CASH: ${formatRpText(pettyCash)}\nTOTAL CASH: ${formatRpText(tcPetty)}\n__________________________\n*PENGELUARAN*\n\n`;
             if(targetExpenses.length===0) report += `(Tidak ada)\n`; else targetExpenses.forEach(e => { report += `# ${e.name} : ${formatRpText(e.amount)}\n`; });
@@ -1503,7 +1512,7 @@
             const targetDate = getSelectedDate(); let wb = XLSX.utils.book_new();
             let orderData = [ ["LAPORAN TRANSAKSI TANGGAL", targetDate], [], ["ID", "Waktu", "Pemesan", "Menu Pesanan", "Shift", "Metode", "Total"] ];
             if(orders && Array.isArray(orders)) {
-                orders.filter(o => o.status === 'selesai' && getOrderDate(o) === targetDate).forEach(o => {
+                getReportOrders(targetDate).forEach(o => {
                     let itemsStr = o.items ? o.items.map(i => `${i.name} (x${i.qty})`).join(', ') : "-"; orderData.push([o.id, o.time, o.customer, itemsStr, o.shift, o.payment, o.total]); 
                 });
             }
@@ -1511,7 +1520,7 @@
 
             let expenseData = [ ["LAPORAN PENGELUARAN TANGGAL", targetDate], [], ["Kategori", "Pembayaran", "Nama Pengeluaran", "Nominal"] ];
             if(expenses && Array.isArray(expenses)) {
-                expenses.filter(e => getExpenseDate(e) === targetDate).forEach(e => { expenseData.push([e.category||"-", e.payment||"-", e.name, e.amount]); });
+                getReportExpenses(targetDate).forEach(e => { expenseData.push([e.category||"-", e.payment||"-", e.name, getSafeAmount(e.amount)]); });
             }
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expenseData), "Pengeluaran");
 
@@ -1568,20 +1577,22 @@
             if (!url) { showToast("URL Webhook belum diisi di Pengaturan!", "error"); return; }
             showToast("⏳ SINKRONISASI BERJALAN...", "info");
             
-            let targetDate = getSelectedDate();
-            let tc = 0, tq = 0, to = 0; 
-            if(orders && Array.isArray(orders)) {
-                orders.forEach(o => {
-                    if (o.status === 'selesai' && getOrderDate(o) === targetDate) {
-                        if (o.payment === 'Cash') tc += o.total; 
-                        else if(['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += o.total; 
-                        else tq += o.total; 
-                    }
-                });
+            const targetDate = getSelectedDate();
+            if (isFutureDate(targetDate)) {
+                showToast("Tidak dapat sinkronkan laporan untuk tanggal yang belum terjadi.", "error");
+                return;
             }
+
+            let tc = 0, tq = 0, to = 0;
+            getReportOrders(targetDate).forEach(o => {
+                const amount = getSafeAmount(o.total);
+                if (o.payment === 'Cash') tc += amount;
+                else if (['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += amount;
+                else if (o.payment === 'QRIS') tq += amount;
+            });
             try {
                 await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
-                let targetExpenses = (expenses && Array.isArray(expenses)) ? expenses.filter(e => getExpenseDate(e) === targetDate) : [];
+                let targetExpenses = getReportExpenses(targetDate);
                 
                 for (let e of targetExpenses) { 
                     await fetch(url, { 
@@ -1714,7 +1725,7 @@
         }
 
         function deleteOrderPermanently(id) {
-            if(confirm("Yakin menghapus pesanan ini secara PERMANEN?")) { orders = orders.filter(o => o.id !== id); syncToCloud('orders', orders, { allowDestructive: true }); showToast("Pesanan dihapus permanen!", "success"); if(isPageActive('revenue')) renderRevenue(); if(isPageActive('history')) filterHistory(window.currentHistoryFilter); }
+            if(confirm("Yakin menghapus pesanan ini secara PERMANEN?")) { orders = orders.filter(o => o.id !== id); syncToCloud('orders', orders); showToast("Pesanan dihapus permanen!", "success"); if(isPageActive('revenue')) renderRevenue(); if(isPageActive('history')) filterHistory(window.currentHistoryFilter); }
         }
 
         function editOrder(id) { 
@@ -1775,7 +1786,21 @@
                 } 
             } else { 
                 let uniqueId = 'ORD-' + Date.now().toString(36).toUpperCase();
-                let nO = { id: uniqueId, time: getTimestamp(), date: todayDate, customer: cust, subtotal: subtotal, discount: discount, total: total, status: status, shift: settings.activeShift, payment: paymentMethod, items: [...cart] }; 
+                const createdAt = Date.now();
+                let nO = {
+                    id: uniqueId,
+                    time: getTimestamp(),
+                    date: todayDate,
+                    createdAt: createdAt,
+                    customer: cust,
+                    subtotal: subtotal,
+                    discount: discount,
+                    total: total,
+                    status: status,
+                    shift: settings.activeShift,
+                    payment: paymentMethod,
+                    items: [...cart]
+                };
                 orders.push(nO); 
                 orderToPrint = nO;
             }
@@ -1862,8 +1887,14 @@
             
             fetchPosDataFromFirebase(); fetchProductsFromFirebase(); checkAutoShift(); 
             
+            // Bersihkan SW/cache lama yang mungkin berasal dari deployment sebelumnya.
+            // Tidak ada reload otomatis sehingga tidak terjadi update loop.
             cleanupLegacyPwaStorageInBackground();
 
+            // Jika halaman sudah berhasil boot setelah hard update, hapus marker reload.
+            sessionStorage.removeItem(UPDATE_RELOAD_FLAG);
+
+            // CEK UPDATE APP (VERSION CONTROLLER)
             checkAppVersion();
         };
     </script>
