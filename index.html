@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.3";
+        const APP_VERSION = "1.0.4";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -1106,22 +1106,119 @@
         }
 
         // 4. SINKRONISASI CLOUD (NON-BLOCKING ASYNC)
+        function getRecordId(record, index) {
+            if (record && record.id !== undefined && record.id !== null && String(record.id) !== "") return String(record.id);
+            return "__record_index_" + index;
+        }
+
+        function getRecordRevision(record) {
+            if (!record || typeof record !== 'object') return 0;
+            return Number(record.updatedAt || record.createdAt || 0) || 0;
+        }
+
+        function mergeCloudRecords(cloudData, localData) {
+            const cloud = forceArray(cloudData);
+            const local = forceArray(localData);
+            const merged = [];
+            const indexById = new Map();
+
+            cloud.forEach((record, index) => {
+                const copy = record && typeof record === 'object' ? { ...record } : record;
+                const id = getRecordId(copy, index);
+                indexById.set(id, merged.length);
+                merged.push(copy);
+            });
+
+            local.forEach((record, index) => {
+                const copy = record && typeof record === 'object' ? { ...record } : record;
+                const id = getRecordId(copy, index);
+                const existingIndex = indexById.get(id);
+
+                if (existingIndex === undefined) {
+                    indexById.set(id, merged.length);
+                    merged.push(copy);
+                    return;
+                }
+
+                const existing = merged[existingIndex];
+                const localRevision = getRecordRevision(copy);
+                const cloudRevision = getRecordRevision(existing);
+
+                // Record baru/hasil edit lokal menang hanya jika revisinya >= cloud.
+                // Untuk record lama tanpa updatedAt, perilaku tetap kompatibel.
+                if (localRevision >= cloudRevision) merged[existingIndex] = copy;
+            });
+
+            return merged;
+        }
+
+        function persistLocalData(key, dataObj) {
+            try {
+                let localData = JSON.parse(JSON.stringify(dataObj));
+                if (key === 'expenses' && Array.isArray(localData)) {
+                    localData.forEach(exp => { if (exp.photo) exp.photo = "TERSIMPAN_DI_CLOUD"; });
+                }
+                localStorage.setItem('pos_' + key, JSON.stringify(localData));
+            } catch (e) {}
+        }
+
         function syncToCloud(key, dataObj) {
             if (isInitialLoad) return;
 
             setTimeout(() => {
-                try {
-                    let localData = JSON.parse(JSON.stringify(dataObj));
-                    if (key === 'expenses' && Array.isArray(localData)) {
-                        localData.forEach(exp => { if (exp.photo) exp.photo = "TERSIMPAN_DI_CLOUD"; });
-                    }
-                    localStorage.setItem('pos_' + key, JSON.stringify(localData)); 
-                } catch (e) {}
-                
-                db.ref('pos_data/' + key).set(dataObj).catch(err => { 
-                    showToast("Gagal terkirim ke Cloud!", "warning"); 
+                // Selalu simpan snapshot lokal terlebih dahulu.
+                persistLocalData(key, dataObj);
+
+                const ref = db.ref('pos_data/' + key);
+
+                // Array transaksi/pengeluaran TIDAK lagi memakai .set(dataObj).
+                // Firebase transaction menggabungkan data cloud + lokal berdasarkan ID,
+                // sehingga device dengan array lebih sedikit tidak dapat menghapus
+                // transaksi/pengeluaran yang hanya ada di device lain.
+                if (Array.isArray(dataObj)) {
+                    ref.transaction(current => mergeCloudRecords(current, dataObj))
+                        .then(result => {
+                            const merged = forceArray(result.snapshot.val());
+
+                            if (key === 'orders') orders = merged;
+                            if (key === 'expenses') expenses = merged;
+
+                            persistLocalData(key, merged);
+
+                            if (key === 'orders' && isPageActive('revenue')) renderRevenue();
+                            if (key === 'orders' && isPageActive('history')) filterHistory(window.currentHistoryFilter);
+                            if (key === 'expenses' && isPageActive('expenses')) renderExpenses();
+                            if (key === 'expenses' && isPageActive('revenue')) renderRevenue();
+                        })
+                        .catch(err => {
+                            console.error("Cloud transaction error:", err);
+                            showToast("Gagal menyinkronkan data ke Cloud!", "warning");
+                        });
+                    return;
+                }
+
+                // Data konfigurasi/non-array tetap menggunakan set biasa.
+                ref.set(dataObj).catch(err => {
+                    console.error("Cloud write error:", err);
+                    showToast("Gagal terkirim ke Cloud!", "warning");
                 });
             }, 50);
+        }
+
+        function deleteRecordFromCloud(key, id) {
+            const targetId = String(id);
+            const ref = db.ref('pos_data/' + key);
+
+            return ref.transaction(current => {
+                const records = forceArray(current);
+                return records.filter((record, index) => getRecordId(record, index) !== targetId);
+            }).then(result => {
+                const merged = forceArray(result.snapshot.val());
+                if (key === 'orders') orders = merged;
+                if (key === 'expenses') expenses = merged;
+                persistLocalData(key, merged);
+                return merged;
+            });
         }
 
         function fetchPosDataFromFirebase() {
@@ -1132,8 +1229,10 @@
                     let cloudOrders = forceArray(data.orders);
                     let cloudExpenses = forceArray(data.expenses);
                     
-                    if (cloudOrders.length > 0 || orders.length === 0) orders = cloudOrders;
-                    if (cloudExpenses.length > 0 || expenses.length === 0) expenses = cloudExpenses;
+                    // Jangan mengganti array lokal dengan cloud yang lebih pendek.
+                    // Merge mempertahankan transaksi/pengeluaran yang masih ada di device ini.
+                    orders = mergeCloudRecords(cloudOrders, orders);
+                    expenses = mergeCloudRecords(cloudExpenses, expenses);
 
                     if (data.pettyCash !== undefined) pettyCash = data.pettyCash;
                     if (data.staffList) staffList = data.staffList;
@@ -1387,6 +1486,8 @@
                     expenses[idx].category = category;
                     expenses[idx].name = name;
                     expenses[idx].amount = parseInt(amount);
+                    expenses[idx].date = inputDate;
+                    expenses[idx].updatedAt = Date.now();
                     if (photo !== "") expenses[idx].photo = photo; 
                 }
                 showToast("Pengeluaran berhasil di-update!", "success");
@@ -1400,6 +1501,7 @@
                     amount: getSafeAmount(amount),
                     date: inputDate,
                     createdAt: createdAt,
+                    updatedAt: createdAt,
                     photo: photo
                 });
                 showToast("Pengeluaran baru dicatat!", "success");
@@ -1451,14 +1553,17 @@
             document.getElementById('btnCancelExpense').style.display = "none";
         }
         
-        function deleteExpense(id) { 
-            if(confirm("Hapus catatan ini?")) { 
-                expenses = expenses.filter(e => e.id !== id); 
-                syncToCloud('expenses', expenses); 
+        async function deleteExpense(id) { 
+            if (!confirm("Hapus catatan ini?")) return;
+            try {
+                await deleteRecordFromCloud('expenses', id);
                 if (isPageActive('expenses')) renderExpenses(); 
                 if (isPageActive('revenue')) renderRevenue(); 
                 showToast("Dihapus", "success"); 
-            } 
+            } catch (err) {
+                console.error("Delete expense error:", err);
+                showToast("Gagal menghapus pengeluaran dari Cloud!", "error");
+            }
         }
         
         function renderExpenses() {
@@ -1763,8 +1868,17 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             tbody.innerHTML = trHtml || `<tr><td colspan="7" style="text-align:center;">Belum ada riwayat.</td></tr>`;
         }
 
-        function deleteOrderPermanently(id) {
-            if(confirm("Yakin menghapus pesanan ini secara PERMANEN?")) { orders = orders.filter(o => o.id !== id); syncToCloud('orders', orders); showToast("Pesanan dihapus permanen!", "success"); if(isPageActive('revenue')) renderRevenue(); if(isPageActive('history')) filterHistory(window.currentHistoryFilter); }
+        async function deleteOrderPermanently(id) {
+            if (!confirm("Yakin menghapus pesanan ini secara PERMANEN?")) return;
+            try {
+                await deleteRecordFromCloud('orders', id);
+                showToast("Pesanan dihapus permanen!", "success");
+                if (isPageActive('revenue')) renderRevenue();
+                if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
+            } catch (err) {
+                console.error("Delete order error:", err);
+                showToast("Gagal menghapus pesanan dari Cloud!", "error");
+            }
         }
 
         function editOrder(id) { 
@@ -1838,7 +1952,8 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     status: status,
                     shift: settings.activeShift,
                     payment: paymentMethod,
-                    items: [...cart]
+                    items: [...cart],
+                    updatedAt: createdAt
                 };
                 orders.push(nO); 
                 orderToPrint = nO;
