@@ -778,58 +778,148 @@
         const db = firebase.database();
 
         // 2. TANGGAL STANDAR ISO (YYYY-MM-DD)
-        function getTodayISO() {
-            let d = new Date();
-            let y = d.getFullYear();
-            let m = String(d.getMonth() + 1).padStart(2, '0');
-            let day = String(d.getDate()).padStart(2, '0');
-            return `${y}-${m}-${day}`;
+        // Penting: data dengan tanggal tidak valid TIDAK boleh dipindahkan
+        // secara otomatis ke hari ini karena akan membuat histori/omzet palsu.
+        const DATE_RE = /^(\\d{4})-(\\d{2})-(\\d{2})$/;
+        const DATE_DMY_RE = /^(\\d{1,2})[\\/.-](\\d{1,2})[\\/.-](\\d{4})$/;
+
+        function pad2(value) {
+            return String(value).padStart(2, '0');
         }
 
-        function getSelectedDate() {
-            let val = document.getElementById('revenueDate') ? document.getElementById('revenueDate').value : "";
-            if(!val) return getTodayISO();
-            return val;
+        function getTodayISO() {
+            const d = new Date();
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        }
+
+        function isValidISODate(value) {
+            if (typeof value !== 'string' || !DATE_RE.test(value)) return false;
+            const [, y, m, d] = value.match(DATE_RE);
+            const date = new Date(Number(y), Number(m) - 1, Number(d));
+            return date.getFullYear() === Number(y)
+                && date.getMonth() === Number(m) - 1
+                && date.getDate() === Number(d);
+        }
+
+        function normalizeISODate(value) {
+            if (value instanceof Date && !isNaN(value.getTime())) {
+                return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+            }
+
+            if (typeof value !== 'string') return null;
+            const raw = value.trim();
+            if (!raw) return null;
+
+            if (isValidISODate(raw)) return raw;
+
+            const dmy = raw.match(DATE_DMY_RE);
+            if (dmy) {
+                const [, d, m, y] = dmy;
+                const iso = `${y}-${pad2(m)}-${pad2(d)}`;
+                return isValidISODate(iso) ? iso : null;
+            }
+
+            // Timestamp ISO eksplisit: YYYY-MM-DDTHH:mm...
+            if (/^\\d{4}-\\d{2}-\\d{2}T/.test(raw)) {
+                const isoDate = raw.slice(0, 10);
+                return isValidISODate(isoDate) ? isoDate : null;
+            }
+
+            return null;
         }
 
         function parseToISO(dateStr) {
-            if (!dateStr) return getTodayISO();
-            dateStr = String(dateStr).trim();
-            if (dateStr.includes('-') && dateStr.split('-')[0].length === 4) return dateStr;
-            if (dateStr.includes('/')) {
-                let parts = dateStr.split('/');
-                if (parts.length === 3) {
-                    let p0 = parts[0].padStart(2, '0');
-                    let p1 = parts[1].padStart(2, '0');
-                    let p2 = parts[2];
-                    if (p2.length === 4) {
-                        if (parseInt(parts[1]) > 12) return `${p2}-${p0}-${p1}`;
-                        return `${p2}-${p1}-${p0}`;
-                    }
-                }
-            }
-            return getTodayISO();
+            return normalizeISODate(dateStr);
         }
 
-        function getOrderDate(o) {
-            if (!o) return getTodayISO();
-            if (o.date) return parseToISO(o.date);
-            return getTodayISO();
+        function getDateFromTimestamp(value) {
+            if (value === null || value === undefined || value === '') return null;
+
+            let ms = null;
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                ms = value;
+            } else if (typeof value === 'string' && /^\\d+$/.test(value.trim())) {
+                const numeric = Number(value);
+                if (Number.isFinite(numeric)) ms = numeric;
+            } else if (value instanceof Date) {
+                ms = value.getTime();
+            } else if (typeof value === 'string') {
+                const parsed = Date.parse(value);
+                if (!Number.isNaN(parsed)) ms = parsed;
+            }
+
+            if (ms === null || !Number.isFinite(ms)) return null;
+
+            const d = new Date(ms);
+            if (Number.isNaN(d.getTime())) return null;
+
+            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
         }
 
-        function getExpenseDate(e) {
-            if (!e) return getTodayISO();
-            if (e.date) return parseToISO(e.date);
-            if (e.id && typeof e.id === 'number') {
-                let idDate = new Date(e.id);
-                if (!isNaN(idDate.getTime())) {
-                    let y = idDate.getFullYear();
-                    let m = String(idDate.getMonth() + 1).padStart(2, '0');
-                    let day = String(idDate.getDate()).padStart(2, '0');
-                    return `${y}-${m}-${day}`;
-                }
+        function getOrderDate(order) {
+            if (!order || typeof order !== 'object') return null;
+
+            const explicitDate = normalizeISODate(order.date);
+            if (explicitDate) return explicitDate;
+
+            return getDateFromTimestamp(
+                order.createdAt ??
+                order.timestamp ??
+                order.created_at
+            );
+        }
+
+        function getExpenseDate(expense) {
+            if (!expense || typeof expense !== 'object') return null;
+
+            const explicitDate = normalizeISODate(expense.date);
+            if (explicitDate) return explicitDate;
+
+            // Data lama: ID pengeluaran dibuat dari Date.now().
+            if (typeof expense.id === 'number' && Number.isFinite(expense.id)) {
+                return getDateFromTimestamp(expense.id);
             }
-            return getTodayISO();
+
+            return getDateFromTimestamp(
+                expense.createdAt ??
+                expense.timestamp ??
+                expense.created_at
+            );
+        }
+
+        function getSelectedDate() {
+            const input = document.getElementById('revenueDate');
+            const selected = input ? normalizeISODate(input.value) : null;
+            return selected || getTodayISO();
+        }
+
+        function isFutureDate(isoDate) {
+            const normalized = normalizeISODate(isoDate);
+            return normalized ? normalized > getTodayISO() : false;
+        }
+
+        function getSafeAmount(value) {
+            const amount = Number(value);
+            return Number.isFinite(amount) && amount >= 0 ? amount : 0;
+        }
+
+        function getReportOrders(targetDate) {
+            if (!targetDate || isFutureDate(targetDate) || !Array.isArray(orders)) return [];
+
+            return orders.filter(order =>
+                order &&
+                order.status === 'selesai' &&
+                getOrderDate(order) === targetDate
+            );
+        }
+
+        function getReportExpenses(targetDate) {
+            if (!targetDate || isFutureDate(targetDate) || !Array.isArray(expenses)) return [];
+
+            return expenses.filter(expense =>
+                expense &&
+                getExpenseDate(expense) === targetDate
+            );
         }
 
         // 3. STATE & DATA MANAGEMENT
@@ -1672,9 +1762,14 @@
         }
 
         function setTodayDate() {
-            let revInput = document.getElementById('revenueDate');
-            if (revInput && !revInput.value) {
-                revInput.value = getTodayISO();
+            const revInput = document.getElementById('revenueDate');
+            if (!revInput) return;
+
+            const today = getTodayISO();
+            revInput.max = today;
+
+            if (!revInput.value || isFutureDate(revInput.value)) {
+                revInput.value = today;
             }
         }
 
