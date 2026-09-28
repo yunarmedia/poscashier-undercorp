@@ -1148,7 +1148,20 @@ let settings = readLocalJSON('settings', defaultSettings);
             return pageEl && pageEl.classList.contains('active');
         }
 
-        // 4. SINKRONISASI CLOUD (NON-BLOCKING ASYNC)
+        // 4. SINKRONISASI CLOUD — PER-RECORD ARCHITECTURE
+        // Transaksi/pengeluaran disimpan satu record per ID.
+        // Legacy array tetap dibaca untuk migrasi/compatibility, tetapi tidak lagi
+        // digunakan sebagai sumber write utama. Ini mencegah whole-array overwrite.
+        const DATA_V2_PATH = 'pos_data_v2';
+        const ORDERS_V2_PATH = DATA_V2_PATH + '/orders';
+        const EXPENSES_V2_PATH = DATA_V2_PATH + '/expenses';
+
+        let ordersV2ListenerStarted = false;
+        let expensesV2ListenerStarted = false;
+        let dataMigrationStarted = false;
+        let lastSyncedOrderRevision = new Map();
+        let lastSyncedExpenseRevision = new Map();
+
         function getRecordId(record, index) {
             if (record && record.id !== undefined && record.id !== null && String(record.id) !== "") return String(record.id);
             return "__record_index_" + index;
@@ -1159,6 +1172,25 @@ let settings = readLocalJSON('settings', defaultSettings);
             return Number(record.updatedAt || record.createdAt || 0) || 0;
         }
 
+        function encodeFirebaseKey(id) {
+            // Firebase child keys tidak boleh mengandung . # $ [ ] atau /.
+            return encodeURIComponent(String(id));
+        }
+
+        function decodeFirebaseRecord(record) {
+            if (!record || typeof record !== 'object') return record;
+            const copy = { ...record };
+            delete copy._deleted;
+            return copy;
+        }
+
+        function recordsFromV2(data) {
+            if (!data || typeof data !== 'object') return [];
+            return Object.values(data)
+                .filter(record => record && typeof record === 'object' && record._deleted !== true)
+                .map(decodeFirebaseRecord);
+        }
+
         function mergeCloudRecords(cloudData, localData) {
             const cloud = forceArray(cloudData);
             const local = forceArray(localData);
@@ -1167,6 +1199,7 @@ let settings = readLocalJSON('settings', defaultSettings);
 
             cloud.forEach((record, index) => {
                 const copy = record && typeof record === 'object' ? { ...record } : record;
+                if (copy && copy._deleted === true) return;
                 const id = getRecordId(copy, index);
                 indexById.set(id, merged.length);
                 merged.push(copy);
@@ -1187,8 +1220,6 @@ let settings = readLocalJSON('settings', defaultSettings);
                 const localRevision = getRecordRevision(copy);
                 const cloudRevision = getRecordRevision(existing);
 
-                // Record baru/hasil edit lokal menang hanya jika revisinya >= cloud.
-                // Untuk record lama tanpa updatedAt, perilaku tetap kompatibel.
                 if (localRevision >= cloudRevision) merged[existingIndex] = copy;
             });
 
@@ -1203,10 +1234,6 @@ let settings = readLocalJSON('settings', defaultSettings);
                 }
 
                 const serialized = JSON.stringify(localData);
-
-                // Primary + independent backup.
-                // Backup ikut diperbarui pada setiap successful local persistence,
-                // sehingga reload tidak bergantung pada satu localStorage entry.
                 localStorage.setItem('pos_' + key, serialized);
                 localStorage.setItem('pos_backup_' + key, serialized);
             } catch (e) {
@@ -1214,138 +1241,276 @@ let settings = readLocalJSON('settings', defaultSettings);
             }
         }
 
-        let posDataListenerStarted = false;
+        function normalizeCloudRecord(record) {
+            if (!record || typeof record !== 'object') return null;
+            const copy = JSON.parse(JSON.stringify(record));
+            copy.id = String(copy.id ?? '');
+            if (!copy.id) return null;
+            if (!copy.updatedAt) copy.updatedAt = Number(copy.createdAt) || Date.now();
+            return copy;
+        }
+
+        async function upsertRecordV2(collection, record, revisionMap) {
+            const normalized = normalizeCloudRecord(record);
+            if (!normalized) return false;
+
+            const id = String(normalized.id);
+            const revision = getRecordRevision(normalized);
+            const knownRevision = revisionMap.get(id) || 0;
+
+            // Jangan menulis ulang record yang sudah diketahui tersinkron.
+            if (revision <= knownRevision) return true;
+
+            const path = collection === 'orders' ? ORDERS_V2_PATH : EXPENSES_V2_PATH;
+            const ref = db.ref(path + '/' + encodeFirebaseKey(id));
+
+            try {
+                const result = await ref.transaction(current => {
+                    if (!current || typeof current !== 'object') {
+                        return { ...normalized, _deleted: false };
+                    }
+
+                    const currentRevision = getRecordRevision(current);
+                    if (current._deleted === true && currentRevision >= revision) {
+                        return current;
+                    }
+
+                    if (currentRevision > revision) return current;
+                    return { ...normalized, _deleted: false };
+                });
+
+                if (result.committed) {
+                    const saved = result.snapshot.val();
+                    const savedRevision = getRecordRevision(saved);
+                    revisionMap.set(id, savedRevision);
+                    return saved && saved._deleted !== true;
+                }
+            } catch (error) {
+                console.error('[V2 Sync] Gagal menyimpan record:', collection, id, error);
+                showToast('⚠️ Data tersimpan lokal, sinkronisasi Cloud tertunda.', 'warning');
+            }
+            return false;
+        }
+
+        async function syncCollectionV2(collection, dataObj) {
+            const records = forceArray(dataObj);
+            const revisionMap = collection === 'orders'
+                ? lastSyncedOrderRevision
+                : lastSyncedExpenseRevision;
+
+            // Batasi concurrency supaya HP kasir tidak dibebani ratusan transaction
+            // sekaligus saat migrasi/boot.
+            const pending = records
+                .map(normalizeCloudRecord)
+                .filter(Boolean)
+                .filter(record => getRecordRevision(record) > (revisionMap.get(String(record.id)) || 0));
+
+            for (let i = 0; i < pending.length; i += 10) {
+                const batch = pending.slice(i, i + 10);
+                await Promise.all(batch.map(record =>
+                    upsertRecordV2(collection, record, revisionMap)
+                ));
+            }
+        }
+
+        async function migrateLegacyCollection(collection, legacyData) {
+            const records = forceArray(legacyData)
+                .map(normalizeCloudRecord)
+                .filter(Boolean);
+
+            if (!records.length) return;
+
+            const revisionMap = collection === 'orders'
+                ? lastSyncedOrderRevision
+                : lastSyncedExpenseRevision;
+
+            for (let i = 0; i < records.length; i += 10) {
+                const batch = records.slice(i, i + 10);
+                await Promise.all(batch.map(record =>
+                    upsertRecordV2(collection, record, revisionMap)
+                ));
+            }
+        }
+
+        async function migrateLegacyDataOnce() {
+            if (dataMigrationStarted) return;
+            dataMigrationStarted = true;
+
+            try {
+                const [ordersSnap, expensesSnap] = await Promise.all([
+                    db.ref('pos_data/orders').once('value'),
+                    db.ref('pos_data/expenses').once('value')
+                ]);
+
+                await Promise.all([
+                    migrateLegacyCollection('orders', ordersSnap.val()),
+                    migrateLegacyCollection('expenses', expensesSnap.val())
+                ]);
+
+                console.info('[V2 Migration] Legacy orders/expenses berhasil diperiksa dan dimigrasikan.');
+            } catch (error) {
+                console.error('[V2 Migration] Gagal:', error);
+                // Jangan hapus/replace data lokal. Listener V2 tetap mencoba cache/cloud.
+            }
+        }
+
+        function applyV2Orders(data) {
+            const cloudOrders = recordsFromV2(data);
+            orders = mergeCloudRecords(cloudOrders, orders);
+            orders.forEach(record => {
+                lastSyncedOrderRevision.set(String(record.id), getRecordRevision(record));
+            });
+            persistLocalData('orders', orders);
+
+            if (isPageActive('pos')) renderPOS(currentPosFilter);
+            else if (isPageActive('revenue')) renderRevenue();
+            else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
+        }
+
+        function applyV2Expenses(data) {
+            const cloudExpenses = recordsFromV2(data);
+            expenses = mergeCloudRecords(cloudExpenses, expenses);
+            expenses.forEach(record => {
+                lastSyncedExpenseRevision.set(String(record.id), getRecordRevision(record));
+            });
+            persistLocalData('expenses', expenses);
+
+            if (isPageActive('expenses')) renderExpenses();
+            if (isPageActive('revenue')) renderRevenue();
+        }
+
+        function startV2Listeners() {
+            if (!ordersV2ListenerStarted) {
+                ordersV2ListenerStarted = true;
+                db.ref(ORDERS_V2_PATH).on('value', snapshot => {
+                    applyV2Orders(snapshot.val());
+                    knownOrderIds.clear();
+                    orders.forEach(o => knownOrderIds.add(o.id));
+                    isInitialLoad = false;
+                    document.getElementById('syncDataStatus').innerText = '✅ Synced';
+                }, error => {
+                    console.error('[V2 Orders Listener]', error);
+                    document.getElementById('syncDataStatus').innerText = '⚠️ Local';
+                    showToast('Cloud transaksi bermasalah — data lokal tetap dipertahankan.', 'warning');
+                    isInitialLoad = false;
+                });
+            }
+
+            if (!expensesV2ListenerStarted) {
+                expensesV2ListenerStarted = true;
+                db.ref(EXPENSES_V2_PATH).on('value', snapshot => {
+                    applyV2Expenses(snapshot.val());
+                }, error => {
+                    console.error('[V2 Expenses Listener]', error);
+                });
+            }
+        }
 
         function syncToCloud(key, dataObj) {
-            if (isInitialLoad) return;
+            // Local-first: persist sebelum network operation.
+            persistLocalData(key, dataObj);
 
+            if (key === 'orders' || key === 'expenses') {
+                if (isInitialLoad) return;
+
+                // Per-record transaction. Tidak pernah .set(array) ke seluruh collection.
+                syncCollectionV2(key, dataObj).catch(error => {
+                    console.error('[V2 Sync Collection]', key, error);
+                });
+                return;
+            }
+
+            // Configuration/scalar data bukan transaksi. Tetap gunakan path terpisah.
             setTimeout(() => {
-                // Selalu simpan snapshot lokal terlebih dahulu.
-                persistLocalData(key, dataObj);
-
-                const ref = db.ref('pos_data/' + key);
-
-                // Array transaksi/pengeluaran TIDAK lagi memakai .set(dataObj).
-                // Firebase transaction menggabungkan data cloud + lokal berdasarkan ID,
-                // sehingga device dengan array lebih sedikit tidak dapat menghapus
-                // transaksi/pengeluaran yang hanya ada di device lain.
-                if (Array.isArray(dataObj)) {
-                    ref.transaction(current => mergeCloudRecords(current, dataObj))
-                        .then(result => {
-                            const merged = forceArray(result.snapshot.val());
-
-                            if (key === 'orders') orders = merged;
-                            if (key === 'expenses') expenses = merged;
-
-                            persistLocalData(key, merged);
-
-                            if (key === 'orders' && isPageActive('revenue')) renderRevenue();
-                            if (key === 'orders' && isPageActive('history')) filterHistory(window.currentHistoryFilter);
-                            if (key === 'expenses' && isPageActive('expenses')) renderExpenses();
-                            if (key === 'expenses' && isPageActive('revenue')) renderRevenue();
-                        })
-                        .catch(err => {
-                            console.error("Cloud transaction error:", err);
-                            showToast("Gagal menyinkronkan data ke Cloud!", "warning");
-                        });
-                    return;
-                }
-
-                // Data konfigurasi/non-array tetap menggunakan set biasa.
-                ref.set(dataObj).catch(err => {
-                    console.error("Cloud write error:", err);
-                    showToast("Gagal terkirim ke Cloud!", "warning");
+                db.ref('pos_data/' + key).set(dataObj).catch(err => {
+                    console.error('Cloud write error:', err);
+                    showToast('Data tersimpan lokal, Cloud tertunda.', 'warning');
                 });
             }, 50);
         }
 
-        function deleteRecordFromCloud(key, id) {
+        async function deleteRecordFromCloud(key, id) {
             const targetId = String(id);
-            const ref = db.ref('pos_data/' + key);
+            const collection = key === 'orders' ? ORDERS_V2_PATH : EXPENSES_V2_PATH;
+            const revision = Date.now();
+            const ref = db.ref(collection + '/' + encodeFirebaseKey(targetId));
 
-            return ref.transaction(current => {
-                const records = forceArray(current);
-                return records.filter((record, index) => getRecordId(record, index) !== targetId);
-            }).then(result => {
-                const merged = forceArray(result.snapshot.val());
-                if (key === 'orders') orders = merged;
-                if (key === 'expenses') expenses = merged;
-                persistLocalData(key, merged);
-                return merged;
-            });
+            try {
+                // Tombstone, bukan remove(): device lama yang masih memiliki record
+                // tidak dapat menghidupkannya kembali jika revisinya lebih tua.
+                const result = await ref.transaction(current => {
+                    const currentRevision = getRecordRevision(current);
+                    if (current && currentRevision > revision) return current;
+                    return {
+                        id: targetId,
+                        updatedAt: revision,
+                        createdAt: current && current.createdAt ? current.createdAt : revision,
+                        _deleted: true
+                    };
+                });
+
+                if (!result.committed) throw new Error('Delete transaction tidak committed');
+
+                if (key === 'orders') {
+                    orders = orders.filter(record => String(record.id) !== targetId);
+                    lastSyncedOrderRevision.set(targetId, revision);
+                    persistLocalData('orders', orders);
+                } else if (key === 'expenses') {
+                    expenses = expenses.filter(record => String(record.id) !== targetId);
+                    lastSyncedExpenseRevision.set(targetId, revision);
+                    persistLocalData('expenses', expenses);
+                }
+
+                return forceArray(result.snapshot.val());
+            } catch (error) {
+                console.error('[V2 Delete]', key, targetId, error);
+                throw error;
+            }
         }
 
         function fetchPosDataFromFirebase() {
-            document.getElementById('syncDataStatus').innerText = "🔄 Syncing...";
+            document.getElementById('syncDataStatus').innerText = '🔄 Syncing...';
 
-            // Jangan pernah memasang listener yang sama berkali-kali.
-            // Tombol recovery hanya mengubah state lokal lalu memakai listener existing.
-            if (posDataListenerStarted) {
-                isInitialLoad = true;
-                return;
-            }
-            posDataListenerStarted = true;
+            // Listener V2 hanya dibuat satu kali.
+            startV2Listeners();
 
-            db.ref('pos_data').on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    let cloudOrders = forceArray(data.orders);
-                    let cloudExpenses = forceArray(data.expenses);
-                    
-                    // Jangan mengganti array lokal dengan cloud yang lebih pendek.
-                    // Merge mempertahankan transaksi/pengeluaran yang masih ada di device ini.
-                    orders = mergeCloudRecords(cloudOrders, orders);
-                    expenses = mergeCloudRecords(cloudExpenses, expenses);
+            // Migrasi legacy berjalan di background dan tidak menghapus local state.
+            migrateLegacyDataOnce().catch(error => console.error('[V2 Migration]', error));
 
-                    if (data.pettyCash !== undefined) pettyCash = data.pettyCash;
-                    if (data.staffList) staffList = data.staffList;
-                    if (data.settings) settings = { ...defaultSettings, ...data.settings };
-                    
-                    setTimeout(() => {
-                        persistLocalData('orders', orders);
-                        persistLocalData('expenses', expenses);
-                        persistLocalData('pettyCash', pettyCash);
-                        persistLocalData('staffList', staffList);
-                        persistLocalData('settings', settings);
-                    }, 50);
+            // Load non-transaction config/scalars dari legacy path.
+            db.ref('pos_data').once('value').then(snapshot => {
+                const data = snapshot.val() || {};
 
-                    if (!isInitialLoad) {
-                        orders.forEach(o => {
-                            if (!knownOrderIds.has(o.id) && o.status === 'pending' && o.shift === 'Online Web') {
-                                showToast(`PESANAN BARU DARI WEB: ${o.customer}`, "warning"); playBuzzer();
-                                if (document.getElementById('btAutoPrint').checked) {
-                                    executePrint(o, true).catch(e => console.log(e));
-                                }
-                            }
-                        });
-                    }
-                    knownOrderIds.clear();
-                    orders.forEach(o => knownOrderIds.add(o.id));
-                    
-                    isInitialLoad = false;
-                    
-                    updateSidebarCashier();
-                    
-                    // RE-RENDER HANYA PADA TAB YANG SEDANG AKTIF SAJA (ANTI-LAG)
-                    if (isPageActive('pos')) renderPOS(currentPosFilter);
-                    else if (isPageActive('revenue')) renderRevenue();
-                    else if (isPageActive('expenses')) renderExpenses();
-                    else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
-                    else if (isPageActive('staff')) { loadStaffSettings(); renderStaffList(); }
-                    else if (isPageActive('settings')) loadStoreSettings();
-                } else {
-                    isInitialLoad = false;
+                if (data.pettyCash !== undefined) {
+                    pettyCash = Number(data.pettyCash) || 0;
+                    persistLocalData('pettyCash', pettyCash);
                 }
-                document.getElementById('syncDataStatus').innerText = "✅ Synced";
-            }, (error) => { showToast("Gagal terhubung Cloud", "error"); });
+                if (data.staffList) {
+                    staffList = data.staffList;
+                    persistLocalData('staffList', staffList);
+                }
+                if (data.settings) {
+                    settings = { ...defaultSettings, ...data.settings };
+                    persistLocalData('settings', settings);
+                }
+
+                updateSidebarCashier();
+                if (isPageActive('pos')) renderPOS(currentPosFilter);
+            }).catch(error => {
+                console.warn('[Config Sync] Cloud config gagal:', error);
+                isInitialLoad = false;
+            });
         }
 
         function forceReloadFromCloud() {
-            if (!confirm("Periksa ulang data Cloud dan gabungkan dengan data lokal?\n\nData lokal TIDAK akan dihapus.")) return;
+            if (!confirm('Periksa ulang data Cloud dan gabungkan dengan data lokal?\\n\\nData lokal TIDAK akan dihapus.')) return;
 
             isInitialLoad = true;
-            fetchPosDataFromFirebase();
-            showToast("Memeriksa ulang Cloud tanpa menghapus data lokal...", "info");
+            migrateLegacyDataOnce().finally(() => {
+                startV2Listeners();
+                isInitialLoad = false;
+            });
+            showToast('Memeriksa ulang Cloud tanpa menghapus data lokal...', 'info');
         }
 
         function formatRp(angka) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka); }
@@ -1962,7 +2127,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             if (code === "2006UDC") { 
                 if (confirm("Yakin ingin membatalkan?")) { 
                     let idx = orders.findIndex(o => o.id === id && o.status === currentStatus); if(idx === -1) idx = orders.findIndex(o => o.id === id); 
-                    if(idx !== -1) { orders[idx].status = 'batal'; syncToCloud('orders', orders); showToast("Pesanan dibatalkan!", "success"); if(isPageActive('revenue')) renderRevenue(); if(isPageActive('history')) filterHistory(currentStatus); }
+                    if(idx !== -1) { orders[idx].status = 'batal'; orders[idx].updatedAt = Date.now(); syncToCloud('orders', orders); showToast("Pesanan dibatalkan!", "success"); if(isPageActive('revenue')) renderRevenue(); if(isPageActive('history')) filterHistory(currentStatus); }
                 } 
             } else if (code !== null) showToast("Kode rahasia salah!", "error");
         }
