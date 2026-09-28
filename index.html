@@ -970,6 +970,8 @@
         let editingOrderId = null;
         let knownOrderIds = new Set();
         let isInitialLoad = true;
+        const cloudBaselineIds = { orders: new Set(), expenses: new Set() };
+        const destructiveSyncKeys = new Set();
         
         window.currentHistoryFilter = 'selesai';
         window.currentSubtotal = 0;
@@ -1010,21 +1012,47 @@
         }
 
         // 4. SINKRONISASI CLOUD (NON-BLOCKING ASYNC)
-        function syncToCloud(key, dataObj) {
+        function syncToCloud(key, dataObj, options = {}) {
             if (isInitialLoad) return;
 
-            setTimeout(() => {
+            setTimeout(async () => {
                 try {
                     let localData = JSON.parse(JSON.stringify(dataObj));
+
+                    if (key === 'orders' || key === 'expenses') {
+                        const baselineIds = cloudBaselineIds[key];
+                        const localIds = new Set(
+                            Array.isArray(localData)
+                                ? localData.map(item => String(item?.id ?? '')).filter(Boolean)
+                                : []
+                        );
+
+                        // Safety lock: never overwrite a larger cloud collection with
+                        // a smaller local collection unless an explicit destructive
+                        // operation requested it.
+                        if (!options.allowDestructive && baselineIds.size > 0) {
+                            const missingBaselineIds = [...baselineIds].filter(id => !localIds.has(id));
+                            if (missingBaselineIds.length > 0) {
+                                console.warn('[CloudSafety] Write diblokir karena data lokal lebih kecil dari baseline Cloud.', {
+                                    key,
+                                    missing: missingBaselineIds.length
+                                });
+                                showToast('⚠️ Sinkronisasi dibatalkan agar data lama tidak tertimpa.', 'warning');
+                                return;
+                            }
+                        }
+                    }
+
                     if (key === 'expenses' && Array.isArray(localData)) {
                         localData.forEach(exp => { if (exp.photo) exp.photo = "TERSIMPAN_DI_CLOUD"; });
                     }
-                    localStorage.setItem('pos_' + key, JSON.stringify(localData)); 
-                } catch (e) {}
-                
-                db.ref('pos_data/' + key).set(dataObj).catch(err => { 
-                    showToast("Gagal terkirim ke Cloud!", "warning"); 
-                });
+
+                    localStorage.setItem('pos_' + key, JSON.stringify(localData));
+                    await db.ref('pos_data/' + key).set(localData);
+                } catch (err) {
+                    console.error('[CloudSync]', err);
+                    showToast("Gagal terkirim ke Cloud!", "warning");
+                }
             }, 50);
         }
 
@@ -1035,6 +1063,20 @@
                 if (data) {
                     let cloudOrders = forceArray(data.orders);
                     let cloudExpenses = forceArray(data.expenses);
+
+                    cloudBaselineIds.orders.clear();
+                    cloudOrders.forEach(item => {
+                        if (item && item.id !== undefined && item.id !== null) {
+                            cloudBaselineIds.orders.add(String(item.id));
+                        }
+                    });
+
+                    cloudBaselineIds.expenses.clear();
+                    cloudExpenses.forEach(item => {
+                        if (item && item.id !== undefined && item.id !== null) {
+                            cloudBaselineIds.expenses.add(String(item.id));
+                        }
+                    });
                     
                     if (cloudOrders.length > 0 || orders.length === 0) orders = cloudOrders;
                     if (cloudExpenses.length > 0 || expenses.length === 0) expenses = cloudExpenses;
@@ -1348,7 +1390,7 @@
         function deleteExpense(id) { 
             if(confirm("Hapus catatan ini?")) { 
                 expenses = expenses.filter(e => e.id !== id); 
-                syncToCloud('expenses', expenses); 
+                syncToCloud('expenses', expenses, { allowDestructive: true }); 
                 if (isPageActive('expenses')) renderExpenses(); 
                 if (isPageActive('revenue')) renderRevenue(); 
                 showToast("Dihapus", "success"); 
@@ -1672,7 +1714,7 @@
         }
 
         function deleteOrderPermanently(id) {
-            if(confirm("Yakin menghapus pesanan ini secara PERMANEN?")) { orders = orders.filter(o => o.id !== id); syncToCloud('orders', orders); showToast("Pesanan dihapus permanen!", "success"); if(isPageActive('revenue')) renderRevenue(); if(isPageActive('history')) filterHistory(window.currentHistoryFilter); }
+            if(confirm("Yakin menghapus pesanan ini secara PERMANEN?")) { orders = orders.filter(o => o.id !== id); syncToCloud('orders', orders, { allowDestructive: true }); showToast("Pesanan dihapus permanen!", "success"); if(isPageActive('revenue')) renderRevenue(); if(isPageActive('history')) filterHistory(window.currentHistoryFilter); }
         }
 
         function editOrder(id) { 
