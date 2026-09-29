@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.1.0";
+        const APP_VERSION = "1.1.1";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -824,6 +824,47 @@
         
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+
+        // ------------------------------------------------------------------------
+        // CLOUD CONNECTION WATCHDOG
+        // Menjaga POS tetap usable saat internet putus dan membantu mengirim ulang
+        // transaksi lokal ketika koneksi Firebase kembali.
+        // ------------------------------------------------------------------------
+        let firebaseConnected = false;
+        let firebaseReconnectTimer = null;
+
+        function updateFirebaseConnectionUI(connected) {
+            firebaseConnected = connected;
+            const el = document.getElementById('syncDataStatus');
+            if (!el) return;
+            if (connected) {
+                el.innerText = '☁️ Online';
+                el.style.color = '#9ae6b4';
+            } else {
+                el.innerText = '📴 Offline';
+                el.style.color = '#fbd38d';
+            }
+        }
+
+        db.ref('.info/connected').on('value', snapshot => {
+            const connected = snapshot.val() === true;
+            updateFirebaseConnectionUI(connected);
+
+            if (connected && !isInitialLoad) {
+                clearTimeout(firebaseReconnectTimer);
+                firebaseReconnectTimer = setTimeout(() => {
+                    // Firebase sudah menangani antrean offline sendiri. Ini hanya
+                    // memastikan record lokal yang belum tercatat di revisionMap
+                    // dicoba kembali tanpa menimpa collection secara massal.
+                    syncCollectionV2('orders', orders).catch(error =>
+                        console.warn('[Reconnect Sync] orders:', error)
+                    );
+                    syncCollectionV2('expenses', expenses).catch(error =>
+                        console.warn('[Reconnect Sync] expenses:', error)
+                    );
+                }, 500);
+            }
+        });
 
         // Firebase RTDB disk persistence:
         // cache + antrean write tetap tersedia setelah reload/restart aplikasi.
@@ -2357,7 +2398,10 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     orderToPrint = orders[idx];
                 } 
             } else { 
-                let uniqueId = 'ORD-' + Date.now().toString(36).toUpperCase();
+                const uniqueId = 'ORD-' + Date.now().toString(36).toUpperCase() + '-' +
+                    (window.crypto && typeof window.crypto.randomUUID === 'function'
+                        ? window.crypto.randomUUID().slice(0, 8).toUpperCase()
+                        : Math.random().toString(36).slice(2, 10).toUpperCase());
                 const createdAt = Date.now();
                 let nO = {
                     id: uniqueId,
