@@ -1182,19 +1182,6 @@ let settings = readLocalJSON('settings', defaultSettings);
         let expensesInitialHydration = true;
         let ordersInitialHydrationDone = false;
         let expensesInitialHydrationDone = false;
-        let configInitialHydrationDone = false;
-        let menuInitialHydrationDone = false;
-
-        function updateDataSyncStatus() {
-            const el = document.getElementById('syncDataStatus');
-            if (!el) return;
-
-            if (ordersInitialHydrationDone && expensesInitialHydrationDone && configInitialHydrationDone) {
-                el.innerText = '✅ Synced';
-            } else {
-                el.innerText = '🔄 Syncing...';
-            }
-        }
 
         function markSyncing() {
             const el = document.getElementById('syncDataStatus');
@@ -1542,7 +1529,10 @@ let settings = readLocalJSON('settings', defaultSettings);
                     ordersInitialHydrationDone = true;
                     isInitialLoad = false;
                     processQueuedV2Changes('orders');
-                    updateDataSyncStatus();
+                    if (!orderChangeTimer) {
+                        const el = document.getElementById('syncDataStatus');
+                        if (el) el.innerText = '✅ Synced';
+                    }
                 }).catch(error => {
                     console.error('[V2 Orders Initial Hydration]', error);
                     ordersInitialHydration = false;
@@ -1573,7 +1563,6 @@ let settings = readLocalJSON('settings', defaultSettings);
                     expensesInitialHydration = false;
                     expensesInitialHydrationDone = true;
                     processQueuedV2Changes('expenses');
-                    updateDataSyncStatus();
                 }).catch(error => {
                     console.error('[V2 Expenses Initial Hydration]', error);
                     expensesInitialHydration = false;
@@ -1676,12 +1665,8 @@ let settings = readLocalJSON('settings', defaultSettings);
                 updateSidebarCashier();
                 if (isPageActive('pos')) renderPOS(currentPosFilter);
 
-                configInitialHydrationDone = true;
-                updateDataSyncStatus();
             }).catch(error => {
                 console.warn('[Config Sync] Cloud config gagal:', error);
-                configInitialHydrationDone = true;
-                updateDataSyncStatus();
                 isInitialLoad = false;
             });
         }
@@ -1799,16 +1784,11 @@ let settings = readLocalJSON('settings', defaultSettings);
                     }
                 }
                 products = fbProducts;
-                localStorage.setItem('pos_products', JSON.stringify(products));
-                menuInitialHydrationDone = true;
+                localStorage.setItem('pos_products', JSON.stringify(products)); 
                 document.getElementById('syncMenuStatus').innerText = "✅ Synced"; 
                 if (isPageActive('inventory')) renderInventory(); 
                 if (isPageActive('pos')) { renderCategories(); renderPOS(currentPosFilter); }
-            }, (error) => {
-                menuInitialHydrationDone = false;
-                document.getElementById('syncMenuStatus').innerText = "⚠️ Local";
-                showToast("Gagal menarik Menu", "error");
-            });
+            }, (error) => { showToast("Gagal menarik Menu", "error"); });
         }
 
         function renderInventory() {
