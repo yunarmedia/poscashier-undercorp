@@ -1177,6 +1177,22 @@ let settings = readLocalJSON('settings', defaultSettings);
         let expenseChangeTimer = null;
         let orderSyncBusy = false;
         let expenseSyncBusy = false;
+        let syncStatusTimer = null;
+
+        function markSyncing() {
+            const el = document.getElementById('syncDataStatus');
+            if (el) el.innerText = '🔄 Syncing...';
+
+            if (syncStatusTimer) clearTimeout(syncStatusTimer);
+            syncStatusTimer = setTimeout(() => {
+                const hasPending = pendingOrderChanges.size > 0 || pendingExpenseChanges.size > 0;
+                if (!hasPending) {
+                    const statusEl = document.getElementById('syncDataStatus');
+                    if (statusEl) statusEl.innerText = '✅ Synced';
+                }
+                syncStatusTimer = null;
+            }, 900);
+        }
 
         function getCollectionState(collection) {
             return collection === 'orders'
@@ -1192,6 +1208,8 @@ let settings = readLocalJSON('settings', defaultSettings);
 
             const state = getCollectionState(collection);
             if (!id) return;
+
+            markSyncing();
 
             // child_removed dapat hanya membawa key, sedangkan added/changed membawa data.
             state.pending.set(id, {
@@ -1495,7 +1513,7 @@ let settings = readLocalJSON('settings', defaultSettings);
 
                 setTimeout(() => {
                     isInitialLoad = false;
-                    document.getElementById('syncDataStatus').innerText = '✅ Synced';
+                    markSyncing();
                 }, 1200);
             }
 
