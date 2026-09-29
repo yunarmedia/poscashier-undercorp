@@ -1162,6 +1162,40 @@ let settings = readLocalJSON('settings', defaultSettings);
         let lastSyncedOrderRevision = new Map();
         let lastSyncedExpenseRevision = new Map();
 
+        // Firebase "value" events dapat datang beruntun saat banyak record berubah
+        // (terutama ketika migrasi). Jangan memproses/merender snapshot satu per satu
+        // karena itu dapat memblokir main thread pada HP kasir.
+        let ordersV2ApplyTimer = null;
+        let expensesV2ApplyTimer = null;
+        let pendingOrdersV2Snapshot = null;
+        let pendingExpensesV2Snapshot = null;
+        let v2InitialOrdersApplied = false;
+        let v2InitialExpensesApplied = false;
+
+        function scheduleV2OrdersApply(data) {
+            pendingOrdersV2Snapshot = data;
+            if (ordersV2ApplyTimer) return;
+
+            ordersV2ApplyTimer = setTimeout(() => {
+                ordersV2ApplyTimer = null;
+                const snapshotData = pendingOrdersV2Snapshot;
+                pendingOrdersV2Snapshot = null;
+                applyV2Orders(snapshotData);
+            }, 300);
+        }
+
+        function scheduleV2ExpensesApply(data) {
+            pendingExpensesV2Snapshot = data;
+            if (expensesV2ApplyTimer) return;
+
+            expensesV2ApplyTimer = setTimeout(() => {
+                expensesV2ApplyTimer = null;
+                const snapshotData = pendingExpensesV2Snapshot;
+                pendingExpensesV2Snapshot = null;
+                applyV2Expenses(snapshotData);
+            }, 300);
+        }
+
         function getRecordId(record, index) {
             if (record && record.id !== undefined && record.id !== null && String(record.id) !== "") return String(record.id);
             return "__record_index_" + index;
@@ -1347,6 +1381,13 @@ let settings = readLocalJSON('settings', defaultSettings);
                     migrateLegacyCollection('expenses', expensesSnap.val())
                 ]);
 
+                // Sekali saja setelah migrasi selesai, pulihkan record lokal yang belum
+                // pernah terlihat di V2. Jangan melakukan ini dari setiap listener event.
+                await Promise.all([
+                    syncCollectionV2('orders', orders),
+                    syncCollectionV2('expenses', expenses)
+                ]);
+
                 console.info('[V2 Migration] Legacy orders/expenses berhasil diperiksa dan dimigrasikan.');
             } catch (error) {
                 console.error('[V2 Migration] Gagal:', error);
@@ -1383,14 +1424,6 @@ let settings = readLocalJSON('settings', defaultSettings);
 
             persistLocalData('orders', orders);
 
-            // Local-first recovery: jika ada transaksi yang belum pernah ada di V2,
-            // dorong kembali ke Cloud tanpa menunggu transaksi baru.
-            if (!isInitialLoad && orders.length) {
-                syncCollectionV2('orders', orders).catch(error =>
-                    console.error('[V2 Local Recovery Orders]', error)
-                );
-            }
-
             if (isPageActive('pos')) renderPOS(currentPosFilter);
             else if (isPageActive('revenue')) renderRevenue();
             else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
@@ -1423,12 +1456,6 @@ let settings = readLocalJSON('settings', defaultSettings);
 
             persistLocalData('expenses', expenses);
 
-            if (!isInitialLoad && expenses.length) {
-                syncCollectionV2('expenses', expenses).catch(error =>
-                    console.error('[V2 Local Recovery Expenses]', error)
-                );
-            }
-
             if (isPageActive('expenses')) renderExpenses();
             if (isPageActive('revenue')) renderRevenue();
         }
@@ -1437,11 +1464,17 @@ let settings = readLocalJSON('settings', defaultSettings);
             if (!ordersV2ListenerStarted) {
                 ordersV2ListenerStarted = true;
                 db.ref(ORDERS_V2_PATH).on('value', snapshot => {
-                    applyV2Orders(snapshot.val());
+                    scheduleV2OrdersApply(snapshot.val());
                     knownOrderIds.clear();
                     orders.forEach(o => knownOrderIds.add(o.id));
                     isInitialLoad = false;
-                    document.getElementById('syncDataStatus').innerText = '✅ Synced';
+                    document.getElementById('syncDataStatus').innerText = '🔄 Syncing...';
+                    if (!v2InitialOrdersApplied) {
+                        v2InitialOrdersApplied = true;
+                        setTimeout(() => {
+                            document.getElementById('syncDataStatus').innerText = '✅ Synced';
+                        }, 350);
+                    }
                 }, error => {
                     console.error('[V2 Orders Listener]', error);
                     document.getElementById('syncDataStatus').innerText = '⚠️ Local';
@@ -1453,7 +1486,7 @@ let settings = readLocalJSON('settings', defaultSettings);
             if (!expensesV2ListenerStarted) {
                 expensesV2ListenerStarted = true;
                 db.ref(EXPENSES_V2_PATH).on('value', snapshot => {
-                    applyV2Expenses(snapshot.val());
+                    scheduleV2ExpensesApply(snapshot.val());
                 }, error => {
                     console.error('[V2 Expenses Listener]', error);
                 });
@@ -1528,8 +1561,11 @@ let settings = readLocalJSON('settings', defaultSettings);
             // Listener V2 hanya dibuat satu kali.
             startV2Listeners();
 
-            // Migrasi legacy berjalan di background dan tidak menghapus local state.
-            migrateLegacyDataOnce().catch(error => console.error('[V2 Migration]', error));
+            // Migrasi legacy dijalankan setelah UI sempat idle agar boot tidak tersendat.
+            // Data lokal/V2 tetap menjadi sumber transaksi selama jeda ini.
+            setTimeout(() => {
+                migrateLegacyDataOnce().catch(error => console.error('[V2 Migration]', error));
+            }, 1500);
 
             // Load non-transaction config/scalars dari legacy path.
             db.ref('pos_data').once('value').then(snapshot => {
