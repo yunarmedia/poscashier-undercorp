@@ -1178,6 +1178,10 @@ let settings = readLocalJSON('settings', defaultSettings);
         let orderSyncBusy = false;
         let expenseSyncBusy = false;
         let syncStatusTimer = null;
+        let ordersInitialHydration = true;
+        let expensesInitialHydration = true;
+        let ordersInitialHydrationDone = false;
+        let expensesInitialHydrationDone = false;
 
         function markSyncing() {
             const el = document.getElementById('syncDataStatus');
@@ -1209,7 +1213,13 @@ let settings = readLocalJSON('settings', defaultSettings);
             const state = getCollectionState(collection);
             if (!id) return;
 
-            markSyncing();
+            // Saat listener baru dipasang, Firebase mengirim child_added untuk
+            // seluruh record yang sudah ada. Itu adalah initial hydration, bukan
+            // sinkronisasi baru. Jangan membuat indikator Riwayat berkedip Syncing.
+            const isInitialHydration = collection === 'orders'
+                ? ordersInitialHydration
+                : expensesInitialHydration;
+            if (!isInitialHydration) markSyncing();
 
             // child_removed dapat hanya membawa key, sedangkan added/changed membawa data.
             state.pending.set(id, {
@@ -1511,10 +1521,26 @@ let settings = readLocalJSON('settings', defaultSettings);
                     console.error('[V2 Orders child_removed]', error);
                 });
 
-                setTimeout(() => {
+                // Firebase value event dijadikan barrier: menurut event guarantees,
+                // value dipicu setelah event child yang mendahuluinya. Jadi kita tahu
+                // kapan initial child_added selesai tanpa menebak dengan setTimeout.
+                ref.once('value').then(() => {
+                    ordersInitialHydration = false;
+                    ordersInitialHydrationDone = true;
                     isInitialLoad = false;
-                    markSyncing();
-                }, 1200);
+                    processQueuedV2Changes('orders');
+                    if (!orderChangeTimer) {
+                        const el = document.getElementById('syncDataStatus');
+                        if (el) el.innerText = '✅ Synced';
+                    }
+                }).catch(error => {
+                    console.error('[V2 Orders Initial Hydration]', error);
+                    ordersInitialHydration = false;
+                    ordersInitialHydrationDone = true;
+                    isInitialLoad = false;
+                    const el = document.getElementById('syncDataStatus');
+                    if (el) el.innerText = '⚠️ Local';
+                });
             }
 
             if (!expensesV2ListenerStarted) {
@@ -1531,6 +1557,16 @@ let settings = readLocalJSON('settings', defaultSettings);
 
                 ref.on('child_removed', snapshot => queueV2RecordChange('expenses', snapshot, 'removed'), error => {
                     console.error('[V2 Expenses child_removed]', error);
+                });
+
+                ref.once('value').then(() => {
+                    expensesInitialHydration = false;
+                    expensesInitialHydrationDone = true;
+                    processQueuedV2Changes('expenses');
+                }).catch(error => {
+                    console.error('[V2 Expenses Initial Hydration]', error);
+                    expensesInitialHydration = false;
+                    expensesInitialHydrationDone = true;
                 });
             }
         }
