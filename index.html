@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.9";
+        const APP_VERSION = "1.1.0";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -1223,8 +1223,14 @@ let settings = readLocalJSON('settings', defaultSettings);
         }
 
         function scheduleV2CollectionApply(collection) {
+            // Firebase mengirim child_added untuk semua record saat listener pertama dipasang.
+            // Jangan proses/render tiap 250ms selama initial hydration; kumpulkan lalu proses sekali.
+            const isInitialHydration = collection === 'orders'
+                ? ordersInitialHydration
+                : expensesInitialHydration;
+            if (isInitialHydration) return;
+
             const isOrders = collection === 'orders';
-            const timerKey = isOrders ? 'orderChangeTimer' : 'expenseChangeTimer';
 
             if (isOrders) {
                 if (orderChangeTimer) return;
@@ -1650,11 +1656,18 @@ let settings = readLocalJSON('settings', defaultSettings);
             // Listener V2 hanya dibuat satu kali.
             startV2Listeners();
 
-            // Migrasi legacy dijalankan setelah UI sempat idle agar boot tidak tersendat.
-            // Data lokal/V2 tetap menjadi sumber transaksi selama jeda ini.
+            // Migrasi legacy dijalankan setelah UI benar-benar sempat idle.
+            // Data V2/local sudah dapat dipakai tanpa menunggu proses recovery ini.
             setTimeout(() => {
-                migrateLegacyDataOnce().catch(error => console.error('[V2 Migration]', error));
-            }, 1500);
+                const runMigration = () => migrateLegacyDataOnce()
+                    .catch(error => console.error('[V2 Migration]', error));
+
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(runMigration, { timeout: 5000 });
+                } else {
+                    runMigration();
+                }
+            }, 3000);
 
             // Load non-transaction config/scalars dari legacy path.
             db.ref('pos_data').once('value').then(snapshot => {
