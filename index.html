@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.7";
+        const APP_VERSION = "1.0.8";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -1162,38 +1162,141 @@ let settings = readLocalJSON('settings', defaultSettings);
         let lastSyncedOrderRevision = new Map();
         let lastSyncedExpenseRevision = new Map();
 
-        // Firebase "value" events dapat datang beruntun saat banyak record berubah
-        // (terutama ketika migrasi). Jangan memproses/merender snapshot satu per satu
-        // karena itu dapat memblokir main thread pada HP kasir.
-        let ordersV2ApplyTimer = null;
-        let expensesV2ApplyTimer = null;
-        let pendingOrdersV2Snapshot = null;
-        let pendingExpensesV2Snapshot = null;
-        let v2InitialOrdersApplied = false;
-        let v2InitialExpensesApplied = false;
+        // Realtime sync V2 menggunakan event per-record, bukan "value" pada seluruh
+        // collection. Ini penting untuk HP kasir: perubahan 1 transaksi tidak boleh
+        // memaksa browser memproses ulang seluruh riwayat.
+        let ordersV2ListenerStarted = false;
+        let expensesV2ListenerStarted = false;
+        let dataMigrationStarted = false;
+        let lastSyncedOrderRevision = new Map();
+        let lastSyncedExpenseRevision = new Map();
 
-        function scheduleV2OrdersApply(data) {
-            pendingOrdersV2Snapshot = data;
-            if (ordersV2ApplyTimer) return;
+        const pendingOrderChanges = new Map();
+        const pendingExpenseChanges = new Map();
+        let orderChangeTimer = null;
+        let expenseChangeTimer = null;
+        let orderSyncBusy = false;
+        let expenseSyncBusy = false;
 
-            ordersV2ApplyTimer = setTimeout(() => {
-                ordersV2ApplyTimer = null;
-                const snapshotData = pendingOrdersV2Snapshot;
-                pendingOrdersV2Snapshot = null;
-                applyV2Orders(snapshotData);
-            }, 300);
+        function getCollectionState(collection) {
+            return collection === 'orders'
+                ? { records: orders, revisionMap: lastSyncedOrderRevision, pending: pendingOrderChanges }
+                : { records: expenses, revisionMap: lastSyncedExpenseRevision, pending: pendingExpenseChanges };
         }
 
-        function scheduleV2ExpensesApply(data) {
-            pendingExpensesV2Snapshot = data;
-            if (expensesV2ApplyTimer) return;
+        function queueV2RecordChange(collection, snapshot, changeType) {
+            const record = snapshot ? snapshot.val() : null;
+            const id = record && record.id !== undefined
+                ? String(record.id)
+                : decodeURIComponent(snapshot ? snapshot.key : '');
 
-            expensesV2ApplyTimer = setTimeout(() => {
-                expensesV2ApplyTimer = null;
-                const snapshotData = pendingExpensesV2Snapshot;
-                pendingExpensesV2Snapshot = null;
-                applyV2Expenses(snapshotData);
-            }, 300);
+            const state = getCollectionState(collection);
+            if (!id) return;
+
+            // child_removed dapat hanya membawa key, sedangkan added/changed membawa data.
+            state.pending.set(id, {
+                id,
+                record,
+                changeType
+            });
+
+            scheduleV2CollectionApply(collection);
+        }
+
+        function scheduleV2CollectionApply(collection) {
+            const isOrders = collection === 'orders';
+            const timerKey = isOrders ? 'orderChangeTimer' : 'expenseChangeTimer';
+
+            if (isOrders) {
+                if (orderChangeTimer) return;
+                orderChangeTimer = setTimeout(() => {
+                    orderChangeTimer = null;
+                    processQueuedV2Changes('orders');
+                }, 250);
+            } else {
+                if (expenseChangeTimer) return;
+                expenseChangeTimer = setTimeout(() => {
+                    expenseChangeTimer = null;
+                    processQueuedV2Changes('expenses');
+                }, 250);
+            }
+        }
+
+        function processQueuedV2Changes(collection) {
+            const state = getCollectionState(collection);
+            const queue = Array.from(state.pending.values());
+            state.pending.clear();
+
+            if (!queue.length) return;
+
+            const target = collection === 'orders' ? orders : expenses;
+            const indexById = new Map();
+            target.forEach((record, index) => {
+                if (record && record.id !== undefined) indexById.set(String(record.id), index);
+            });
+
+            let changed = false;
+
+            queue.forEach(change => {
+                const id = String(change.id);
+                const existingIndex = indexById.get(id);
+                const incoming = change.record && typeof change.record === 'object'
+                    ? { ...change.record }
+                    : null;
+
+                if (change.changeType === 'removed' || (incoming && incoming._deleted === true)) {
+                    if (existingIndex !== undefined) {
+                        target.splice(existingIndex, 1);
+                        // Rebuild indexes after deletion; queue is normally tiny.
+                        indexById.clear();
+                        target.forEach((record, index) => {
+                            if (record && record.id !== undefined) indexById.set(String(record.id), index);
+                        });
+                        changed = true;
+                    }
+                    if (incoming) state.revisionMap.set(id, getRecordRevision(incoming));
+                    return;
+                }
+
+                if (!incoming) return;
+
+                const normalized = normalizeCloudRecord(incoming);
+                if (!normalized) return;
+
+                const incomingRevision = getRecordRevision(normalized);
+                const existing = existingIndex === undefined ? null : target[existingIndex];
+                const existingRevision = getRecordRevision(existing);
+
+                // Cloud hanya menggantikan local bila versinya sama/lebih baru.
+                // Ini menjaga transaksi lokal yang belum sempat tersinkron.
+                if (existingIndex === undefined || incomingRevision >= existingRevision) {
+                    if (existingIndex === undefined) {
+                        indexById.set(id, target.length);
+                        target.push(decodeFirebaseRecord(normalized));
+                    } else {
+                        target[existingIndex] = decodeFirebaseRecord(normalized);
+                    }
+                    changed = true;
+                }
+
+                state.revisionMap.set(id, incomingRevision);
+            });
+
+            if (!changed) return;
+
+            if (collection === 'orders') {
+                orders = target;
+                persistLocalData('orders', orders);
+                if (isPageActive('pos')) renderPOS(currentPosFilter);
+                else if (isPageActive('revenue')) renderRevenue();
+                else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
+                document.getElementById('syncDataStatus').innerText = '✅ Synced';
+            } else {
+                expenses = target;
+                persistLocalData('expenses', expenses);
+                if (isPageActive('expenses')) renderExpenses();
+                if (isPageActive('revenue')) renderRevenue();
+            }
         }
 
         function getRecordId(record, index) {
@@ -1207,7 +1310,6 @@ let settings = readLocalJSON('settings', defaultSettings);
         }
 
         function encodeFirebaseKey(id) {
-            // Firebase child keys tidak boleh mengandung . # $ [ ] atau /.
             return encodeURIComponent(String(id));
         }
 
@@ -1216,13 +1318,6 @@ let settings = readLocalJSON('settings', defaultSettings);
             const copy = { ...record };
             delete copy._deleted;
             return copy;
-        }
-
-        function recordsFromV2(data) {
-            if (!data || typeof data !== 'object') return [];
-            return Object.values(data)
-                .filter(record => record && typeof record === 'object' && record._deleted !== true)
-                .map(decodeFirebaseRecord);
         }
 
         function mergeCloudRecords(cloudData, localData) {
@@ -1251,10 +1346,9 @@ let settings = readLocalJSON('settings', defaultSettings);
                 }
 
                 const existing = merged[existingIndex];
-                const localRevision = getRecordRevision(copy);
-                const cloudRevision = getRecordRevision(existing);
-
-                if (localRevision >= cloudRevision) merged[existingIndex] = copy;
+                if (getRecordRevision(copy) >= getRecordRevision(existing)) {
+                    merged[existingIndex] = copy;
+                }
             });
 
             return merged;
@@ -1291,8 +1385,6 @@ let settings = readLocalJSON('settings', defaultSettings);
             const id = String(normalized.id);
             const revision = getRecordRevision(normalized);
             const knownRevision = revisionMap.get(id) || 0;
-
-            // Jangan menulis ulang record yang sudah diketahui tersinkron.
             if (revision <= knownRevision) return true;
 
             const path = collection === 'orders' ? ORDERS_V2_PATH : EXPENSES_V2_PATH;
@@ -1305,18 +1397,14 @@ let settings = readLocalJSON('settings', defaultSettings);
                     }
 
                     const currentRevision = getRecordRevision(current);
-                    if (current._deleted === true && currentRevision >= revision) {
-                        return current;
-                    }
-
+                    if (current._deleted === true && currentRevision >= revision) return current;
                     if (currentRevision > revision) return current;
                     return { ...normalized, _deleted: false };
                 });
 
                 if (result.committed) {
                     const saved = result.snapshot.val();
-                    const savedRevision = getRecordRevision(saved);
-                    revisionMap.set(id, savedRevision);
+                    revisionMap.set(id, getRecordRevision(saved));
                     return saved && saved._deleted !== true;
                 }
             } catch (error) {
@@ -1332,8 +1420,6 @@ let settings = readLocalJSON('settings', defaultSettings);
                 ? lastSyncedOrderRevision
                 : lastSyncedExpenseRevision;
 
-            // Batasi concurrency supaya HP kasir tidak dibebani ratusan transaction
-            // sekaligus saat migrasi/boot.
             const pending = records
                 .map(normalizeCloudRecord)
                 .filter(Boolean)
@@ -1341,9 +1427,7 @@ let settings = readLocalJSON('settings', defaultSettings);
 
             for (let i = 0; i < pending.length; i += 10) {
                 const batch = pending.slice(i, i + 10);
-                await Promise.all(batch.map(record =>
-                    upsertRecordV2(collection, record, revisionMap)
-                ));
+                await Promise.all(batch.map(record => upsertRecordV2(collection, record, revisionMap)));
             }
         }
 
@@ -1360,9 +1444,7 @@ let settings = readLocalJSON('settings', defaultSettings);
 
             for (let i = 0; i < records.length; i += 10) {
                 const batch = records.slice(i, i + 10);
-                await Promise.all(batch.map(record =>
-                    upsertRecordV2(collection, record, revisionMap)
-                ));
+                await Promise.all(batch.map(record => upsertRecordV2(collection, record, revisionMap)));
             }
         }
 
@@ -1381,8 +1463,6 @@ let settings = readLocalJSON('settings', defaultSettings);
                     migrateLegacyCollection('expenses', expensesSnap.val())
                 ]);
 
-                // Sekali saja setelah migrasi selesai, pulihkan record lokal yang belum
-                // pernah terlihat di V2. Jangan melakukan ini dari setiap listener event.
                 await Promise.all([
                     syncCollectionV2('orders', orders),
                     syncCollectionV2('expenses', expenses)
@@ -1391,104 +1471,48 @@ let settings = readLocalJSON('settings', defaultSettings);
                 console.info('[V2 Migration] Legacy orders/expenses berhasil diperiksa dan dimigrasikan.');
             } catch (error) {
                 console.error('[V2 Migration] Gagal:', error);
-                // Jangan hapus/replace data lokal. Listener V2 tetap mencoba cache/cloud.
             }
-        }
-
-        function applyV2Orders(data) {
-            const cloud = data && typeof data === 'object' ? data : {};
-            const deletedIds = new Set();
-
-            Object.values(cloud).forEach(record => {
-                if (record && record._deleted === true && record.id !== undefined) {
-                    const id = String(record.id);
-                    deletedIds.add(id);
-                    lastSyncedOrderRevision.set(id, getRecordRevision(record));
-                }
-            });
-
-            if (deletedIds.size > 0) {
-                orders = orders.filter(record => !deletedIds.has(String(record.id)));
-            }
-
-            const cloudOrders = recordsFromV2(cloud);
-            orders = mergeCloudRecords(cloudOrders, orders);
-
-            // Hanya record yang benar-benar terlihat dari Cloud yang dianggap synced.
-            // Record yang hanya ada di local tetap akan dikirim ke V2.
-            Object.values(cloud).forEach(record => {
-                if (record && typeof record === 'object' && record.id !== undefined) {
-                    lastSyncedOrderRevision.set(String(record.id), getRecordRevision(record));
-                }
-            });
-
-            persistLocalData('orders', orders);
-
-            if (isPageActive('pos')) renderPOS(currentPosFilter);
-            else if (isPageActive('revenue')) renderRevenue();
-            else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
-        }
-
-        function applyV2Expenses(data) {
-            const cloud = data && typeof data === 'object' ? data : {};
-            const deletedIds = new Set();
-
-            Object.values(cloud).forEach(record => {
-                if (record && record._deleted === true && record.id !== undefined) {
-                    const id = String(record.id);
-                    deletedIds.add(id);
-                    lastSyncedExpenseRevision.set(id, getRecordRevision(record));
-                }
-            });
-
-            if (deletedIds.size > 0) {
-                expenses = expenses.filter(record => !deletedIds.has(String(record.id)));
-            }
-
-            const cloudExpenses = recordsFromV2(cloud);
-            expenses = mergeCloudRecords(cloudExpenses, expenses);
-
-            Object.values(cloud).forEach(record => {
-                if (record && typeof record === 'object' && record.id !== undefined) {
-                    lastSyncedExpenseRevision.set(String(record.id), getRecordRevision(record));
-                }
-            });
-
-            persistLocalData('expenses', expenses);
-
-            if (isPageActive('expenses')) renderExpenses();
-            if (isPageActive('revenue')) renderRevenue();
         }
 
         function startV2Listeners() {
             if (!ordersV2ListenerStarted) {
                 ordersV2ListenerStarted = true;
-                db.ref(ORDERS_V2_PATH).on('value', snapshot => {
-                    scheduleV2OrdersApply(snapshot.val());
-                    knownOrderIds.clear();
-                    orders.forEach(o => knownOrderIds.add(o.id));
-                    isInitialLoad = false;
-                    document.getElementById('syncDataStatus').innerText = '🔄 Syncing...';
-                    if (!v2InitialOrdersApplied) {
-                        v2InitialOrdersApplied = true;
-                        setTimeout(() => {
-                            document.getElementById('syncDataStatus').innerText = '✅ Synced';
-                        }, 350);
-                    }
-                }, error => {
-                    console.error('[V2 Orders Listener]', error);
+                const ref = db.ref(ORDERS_V2_PATH);
+
+                ref.on('child_added', snapshot => queueV2RecordChange('orders', snapshot, 'added'), error => {
+                    console.error('[V2 Orders child_added]', error);
                     document.getElementById('syncDataStatus').innerText = '⚠️ Local';
-                    showToast('Cloud transaksi bermasalah — data lokal tetap dipertahankan.', 'warning');
                     isInitialLoad = false;
                 });
+
+                ref.on('child_changed', snapshot => queueV2RecordChange('orders', snapshot, 'changed'), error => {
+                    console.error('[V2 Orders child_changed]', error);
+                });
+
+                ref.on('child_removed', snapshot => queueV2RecordChange('orders', snapshot, 'removed'), error => {
+                    console.error('[V2 Orders child_removed]', error);
+                });
+
+                setTimeout(() => {
+                    isInitialLoad = false;
+                    document.getElementById('syncDataStatus').innerText = '✅ Synced';
+                }, 1200);
             }
 
             if (!expensesV2ListenerStarted) {
                 expensesV2ListenerStarted = true;
-                db.ref(EXPENSES_V2_PATH).on('value', snapshot => {
-                    scheduleV2ExpensesApply(snapshot.val());
-                }, error => {
-                    console.error('[V2 Expenses Listener]', error);
+                const ref = db.ref(EXPENSES_V2_PATH);
+
+                ref.on('child_added', snapshot => queueV2RecordChange('expenses', snapshot, 'added'), error => {
+                    console.error('[V2 Expenses child_added]', error);
+                });
+
+                ref.on('child_changed', snapshot => queueV2RecordChange('expenses', snapshot, 'changed'), error => {
+                    console.error('[V2 Expenses child_changed]', error);
+                });
+
+                ref.on('child_removed', snapshot => queueV2RecordChange('expenses', snapshot, 'removed'), error => {
+                    console.error('[V2 Expenses child_removed]', error);
                 });
             }
         }
