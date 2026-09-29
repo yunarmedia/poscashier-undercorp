@@ -1162,15 +1162,6 @@ let settings = readLocalJSON('settings', defaultSettings);
         let lastSyncedOrderRevision = new Map();
         let lastSyncedExpenseRevision = new Map();
 
-        // Realtime sync V2 menggunakan event per-record, bukan "value" pada seluruh
-        // collection. Ini penting untuk HP kasir: perubahan 1 transaksi tidak boleh
-        // memaksa browser memproses ulang seluruh riwayat.
-        let ordersV2ListenerStarted = false;
-        let expensesV2ListenerStarted = false;
-        let dataMigrationStarted = false;
-        let lastSyncedOrderRevision = new Map();
-        let lastSyncedExpenseRevision = new Map();
-
         const pendingOrderChanges = new Map();
         const pendingExpenseChanges = new Map();
         let orderChangeTimer = null;
