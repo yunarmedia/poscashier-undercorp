@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.0.8";
+        const APP_VERSION = "1.0.9";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -1477,18 +1477,38 @@ let settings = readLocalJSON('settings', defaultSettings);
                     db.ref('pos_data/expenses').once('value')
                 ]);
 
-                await Promise.all([
-                    migrateLegacyCollection('orders', ordersSnap.val()),
-                    migrateLegacyCollection('expenses', expensesSnap.val())
-                ]);
+                // Recovery penting: legacy cloud langsung digabung ke local terlebih dahulu.
+                // Jangan menunggu child_added V2, karena V2 bisa tertinggal dari data legacy.
+                const legacyOrders = forceArray(ordersSnap.val())
+                    .map(normalizeCloudRecord)
+                    .filter(Boolean);
+                const legacyExpenses = forceArray(expensesSnap.val())
+                    .map(normalizeCloudRecord)
+                    .filter(Boolean);
+
+                orders = mergeCloudRecords(legacyOrders, orders);
+                expenses = mergeCloudRecords(legacyExpenses, expenses);
+
+                persistLocalData('orders', orders);
+                persistLocalData('expenses', expenses);
+
+                if (isPageActive('pos')) renderPOS(currentPosFilter);
+                else if (isPageActive('revenue')) renderRevenue();
+                else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
+                if (isPageActive('expenses')) renderExpenses();
 
                 await Promise.all([
+                    migrateLegacyCollection('orders', legacyOrders),
+                    migrateLegacyCollection('expenses', legacyExpenses),
                     syncCollectionV2('orders', orders),
                     syncCollectionV2('expenses', expenses)
                 ]);
 
-                console.info('[V2 Migration] Legacy orders/expenses berhasil diperiksa dan dimigrasikan.');
+                console.info('[V2 Migration] Legacy orders/expenses berhasil digabungkan dan dimigrasikan.');
             } catch (error) {
+                // Jangan mengunci migration setelah kegagalan jaringan/permission.
+                // Boot berikutnya atau recovery manual boleh mencoba lagi.
+                dataMigrationStarted = false;
                 console.error('[V2 Migration] Gagal:', error);
             }
         }
@@ -1666,6 +1686,7 @@ let settings = readLocalJSON('settings', defaultSettings);
             if (!confirm('Periksa ulang data Cloud dan gabungkan dengan data lokal?\\n\\nData lokal TIDAK akan dihapus.')) return;
 
             isInitialLoad = true;
+            dataMigrationStarted = false;
             migrateLegacyDataOnce().finally(() => {
                 startV2Listeners();
                 isInitialLoad = false;
