@@ -2194,14 +2194,14 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 else if (o.payment === 'QRIS') tq += amount;
             });
             try {
-                await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
+                await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
                 let targetExpenses = getReportExpenses(targetDate);
                 
                 for (let e of targetExpenses) { 
                     await fetch(url, { 
                         method: 'POST', 
                         mode: 'no-cors', 
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+                        headers: { 'Content-Type': 'application/json' }, 
                         body: JSON.stringify({ 
                             type: "pengeluaran", 
                             date: targetDate, 
