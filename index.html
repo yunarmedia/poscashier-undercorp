@@ -2194,14 +2194,14 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 else if (o.payment === 'QRIS') tq += amount;
             });
             try {
-                await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
+                await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
                 let targetExpenses = getReportExpenses(targetDate);
                 
                 for (let e of targetExpenses) { 
                     await fetch(url, { 
                         method: 'POST', 
                         mode: 'no-cors', 
-                        headers: { 'Content-Type': 'application/json' }, 
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
                         body: JSON.stringify({ 
                             type: "pengeluaran", 
                             date: targetDate, 
@@ -2398,122 +2398,3 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     orderToPrint = orders[idx];
                 } 
             } else { 
-                const uniqueId = 'ORD-' + Date.now().toString(36).toUpperCase() + '-' +
-                    (window.crypto && typeof window.crypto.randomUUID === 'function'
-                        ? window.crypto.randomUUID().slice(0, 8).toUpperCase()
-                        : Math.random().toString(36).slice(2, 10).toUpperCase());
-                const createdAt = Date.now();
-                let nO = {
-                    id: uniqueId,
-                    time: getTimestamp(),
-                    date: todayDate,
-                    createdAt: createdAt,
-                    customer: cust,
-                    subtotal: subtotal,
-                    discount: discount,
-                    total: total,
-                    status: status,
-                    shift: settings.activeShift,
-                    payment: paymentMethod,
-                    items: [...cart],
-                    updatedAt: createdAt
-                };
-                orders.push(nO); 
-                orderToPrint = nO;
-            }
-            
-            syncToCloud('orders', orders); 
-            
-            cart = []; 
-            document.getElementById('orderNote').value = ""; 
-            document.getElementById('discountValue').value = ""; 
-            editingOrderId = null; 
-            
-            if (isPageActive('pos')) renderPOS(currentPosFilter); 
-            
-            if (status === 'selesai') showToast(`Pembayaran ${paymentMethod} Berhasil!`, "success"); 
-            else showToast("Pesanan digantung", "info");
-
-            if (orderToPrint) {
-                try {
-                    if(status === 'selesai' || document.getElementById('btAutoPrint').checked) {
-                        executePrint(orderToPrint).catch(e => console.error("Print Error Bypass:", e)); 
-                    }
-                } catch (err) {
-                    console.error("Printer Crash Bypass:", err);
-                }
-            }
-        }
-
-        async function executePrint(order, isIncomingWebOrder = false) {
-            if(!document.getElementById('btAutoPrint').checked && order.id !== 'TEST' && order.id !== 'SMENTARA' && order.status !== 'selesai' && !isIncomingWebOrder) return;
-            let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name; let success = false;
-            let printTotalsText = `--------------------------------\n`;
-            if (order.discount && order.discount > 0) { printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\nDISKON      : -Rp ${formatRpText(order.discount)}\n`; }
-            printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\nMETODE BAYAR: ${order.payment.toUpperCase()}\n--------------------------------\n`;
-
-            if (printerKasirCharacteristic) {
-                try {
-                    if (settings.logoBase64) { let img = await getESCPOSImage(settings.logoBase64); await writeBluetoothData(printerKasirCharacteristic, img); }
-                    let txt = "\x1B\x40\x1B\x61\x01" + `${settings.storeName}\n${order.time} | ID: ${order.id}\nKasir: ${cName} (S${order.shift})\n--------------------------------\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`; 
-                    order.items.forEach(i => { let st = i.assignedTo ? ` [${i.assignedTo}]` : ''; txt += `${i.name}${st} (x${i.qty})\n`; if(i.note) txt += `   *Cat: ${i.note}\n`; txt += `Rp ${formatRpText(i.price * i.qty)}\n`; });
-                    txt += printTotalsText + `\x1B\x61\x01${settings.footer}\n\n\n\n`;
-                    await writeBluetoothData(printerKasirCharacteristic, new TextEncoder().encode(txt)); success = true;
-                } catch (e) { console.log(e); }
-            }
-            if (printerDapurCharacteristic) {
-                try {
-                    let txt = "\x1B\x40\x1B\x61\x01" + `*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`; 
-                    order.items.forEach(i => { let st = i.assignedTo ? `\n   -> Petugas: ${i.assignedTo}` : ''; txt += `[ ${i.qty}x ] ${i.name}${st}\n`; if(i.note) txt += `   *** Cat: ${i.note} ***\n`; txt += `\n`; });
-                    txt += `--------------------------------\n\n\n\n`;
-                    await writeBluetoothData(printerDapurCharacteristic, new TextEncoder().encode(txt)); success = true;
-                } catch (e) { console.log(e); }
-            }
-            if (!success) {
-                showToast("Bluetooth belum terkoneksi! Mengalihkan ke print layar browser...", "warning");
-                let p = document.getElementById('printReceiptArea'); let lh = settings.logoBase64 ? `<img src="${settings.logoBase64}" style="max-width:150px; display:block; margin: 0 auto 10px auto;">` : '';
-                let html = `<div class="print-center">${lh}<strong style="font-size:16px;">${settings.storeName}</strong><br>${order.time} | ID: ${order.id}<br>Kasir: ${cName}</div><div class="print-divider"></div><div>Pemesan: ${order.customer}</div><div class="print-divider"></div>`;
-                order.items.forEach(i => { let st = i.assignedTo ? ` [${i.assignedTo}]` : ''; let no = i.note ? `<br><span class="print-note">*Catatan: ${i.note}</span>` : ''; html += `<div class="print-flex" style="align-items:start;"><span>${i.name}${st} (x${i.qty})${no}</span><span>${formatRp(i.price * i.qty)}</span></div>`; });
-                html += `<div class="print-divider"></div>`;
-                if (order.discount && order.discount > 0) { html += `<div class="print-flex"><span style="font-size:12px;">Subtotal</span><span style="font-size:12px;">${formatRp(order.subtotal || (order.total + order.discount))}</span></div><div class="print-flex"><span style="font-size:12px;">Diskon</span><span style="font-size:12px;">-${formatRp(order.discount)}</span></div>`; }
-                let ft = settings.footer.replace(/\n/g, '<br>'); html += `<div class="print-flex"><strong style="font-size:14px;">TOTAL</strong><strong style="font-size:14px;">${formatRp(order.total)}</strong></div><div class="print-flex"><span style="font-size:12px;">Status/Metode</span><span style="font-size:12px; font-weight:bold;">${order.payment.toUpperCase()}</span></div><div class="print-divider"></div><div class="print-center" style="margin-top:10px;">${ft}</div>`;
-                p.innerHTML = html; p.style.display = 'block'; window.print(); p.style.display = 'none';
-            }
-        }
-
-        function setTodayDate() {
-            const revInput = document.getElementById('revenueDate');
-            if (!revInput) return;
-
-            const today = getTodayISO();
-            revInput.max = today;
-
-            if (!revInput.value || isFutureDate(revInput.value)) {
-                revInput.value = today;
-            }
-        }
-
-        window.onload = function() { 
-            setTodayDate(); 
-            
-            renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings(); 
-            updateSidebarCashier(); 
-            
-            renderCategories();
-            renderPOS(currentPosFilter);
-            
-            fetchPosDataFromFirebase(); fetchProductsFromFirebase(); checkAutoShift(); 
-            
-            // Bersihkan SW/cache lama yang mungkin berasal dari deployment sebelumnya.
-            // Tidak ada reload otomatis sehingga tidak terjadi update loop.
-            cleanupLegacyPwaStorageInBackground();
-
-            // Jika halaman sudah berhasil boot setelah hard update, hapus marker reload.
-            sessionStorage.removeItem(UPDATE_RELOAD_FLAG);
-
-            // CEK UPDATE APP (VERSION CONTROLLER)
-            checkAppVersion();
-        };
-    </script>
-</body>
-</html>
