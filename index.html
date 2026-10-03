@@ -2460,7 +2460,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                         html += `<div class="print-flex"><span style="font-size:12px;">Subtotal</span><span style="font-size:12px;">${formatRp(order.subtotal || (order.total + order.discount))}</span></div><div class="print-flex"><span style="font-size:12px;">Diskon</span><span style="font-size:12px;">-${formatRp(order.discount)}</span></div>`;
                     }
 
-                    let ft = settings.footer.replace(/\\n/g, '<br>');
+                    let ft = settings.footer.replace(/\n/g, '<br>');
                     html += `<div class="print-flex"><strong style="font-size:14px;">TOTAL</strong><strong style="font-size:14px;">${formatRp(order.total)}</strong></div><div class="print-flex"><span style="font-size:12px;">Status/Metode</span><span style="font-size:12px; font-weight:bold;">${String(order.payment || '').toUpperCase()}</span></div><div class="print-divider"></div><div class="print-center" style="margin-top:10px;">${ft}</div>`;
 
                     p.innerHTML = html;
