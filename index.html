@@ -578,7 +578,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.1.9";
+        const APP_VERSION = "1.2.0";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -2059,8 +2059,8 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 ? bufferArray
                 : new Uint8Array(bufferArray);
 
-            const CHUNK = options.chunk || 96;
-            const DELAY = options.delay ?? 20;
+            const CHUNK = options.chunk || 64;
+            const DELAY = options.delay ?? 25;
 
             for (let i = 0; i < data.length; i += CHUNK) {
                 const chunk = data.slice(i, Math.min(i + CHUNK, data.length));
@@ -2088,16 +2088,77 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         }
 
         async function getESCPOSImage(base64str) {
-            return new Promise((resolve) => {
-                let img = new Image(); img.onload = () => {
-                    let canvas = document.createElement('canvas'); let ctx = canvas.getContext('2d'); let width = 160; let height = Math.round((width * img.height) / img.width);
-                    canvas.width = width; canvas.height = height; ctx.fillStyle = "white"; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height);
-                    let imgData = ctx.getImageData(0, 0, width, height).data; let bytesWidth = Math.ceil(width / 8); let buffer = new Uint8Array(8 + (bytesWidth * height));
-                    buffer[0]=0x1D; buffer[1]=0x76; buffer[2]=0x30; buffer[3]=0x00; buffer[4]=bytesWidth&0xFF; buffer[5]=(bytesWidth>>8)&0xFF; buffer[6]=height&0xFF; buffer[7]=(height>>8)&0xFF;
-                    let offset = 8; for(let y=0; y<height; y++){ for(let x=0; x<bytesWidth; x++){ let byte = 0; for(let b=0; b<8; b++){ let px=(x*8)+b; if(px<width){ let idx=(y*width+px)*4; let lum=(imgData[idx]*0.299)+(imgData[idx+1]*0.587)+(imgData[idx+2]*0.114); if(lum<128) byte|=(1<<(7-b)); } } buffer[offset++]=byte; } } resolve(buffer);
-                }; img.src = base64str;
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+
+                img.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+                        const width = 160;
+                        let height = Math.round((width * img.height) / img.width);
+                        if (!Number.isFinite(height) || height <= 0) throw new Error('Ukuran logo tidak valid.');
+                        height = Math.min(height, 64);
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(0, 0, width, height);
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        const pixels = ctx.getImageData(0, 0, width, height).data;
+                        const out = [];
+
+                        // OKAY 58D: gunakan ESC * bit-image, bukan GS v 0.
+                        // ESC * m=0 mengirim 8 titik vertikal untuk setiap kolom.
+                        for (let y = 0; y < height; y += 8) {
+                            const bytesWide = Math.ceil(width / 8);
+
+                            // ESC * m=0 nL nH
+                            out.push(0x1B, 0x2A, 0x00, bytesWide & 0xFF, (bytesWide >> 8) & 0xFF);
+
+                            for (let xByte = 0; xByte < bytesWide; xByte++) {
+                                for (let bit = 0; bit < 8; bit++) {
+                                    let value = 0;
+                                    const x = xByte * 8 + bit;
+
+                                    // This bit-image format expects one byte per horizontal
+                                    // column containing 8 vertical pixels.
+                                    for (let row = 0; row < 8; row++) {
+                                        const py = y + row;
+                                        if (x >= width || py >= height) continue;
+
+                                        const idx = (py * width + x) * 4;
+                                        const alpha = pixels[idx + 3];
+                                        const lum = (pixels[idx] * 0.299) +
+                                                    (pixels[idx + 1] * 0.587) +
+                                                    (pixels[idx + 2] * 0.114);
+
+                                        if (alpha > 20 && lum < 150) {
+                                            value |= (1 << (7 - row));
+                                        }
+                                    }
+
+                                    out.push(value);
+                                }
+                            }
+
+                            // Finish this 8-dot band before the next one.
+                            out.push(0x0A);
+                        }
+
+                        resolve(new Uint8Array(out));
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+
+                img.onerror = () => reject(new Error('Logo printer gagal diproses.'));
+                img.src = base64str;
             });
         }
+
         const PRINTER_BLE_PROFILES = [
             {                service: '000018f0-0000-1000-8000-00805f9b34fb',
                 characteristic: '00002af1-0000-1000-8000-00805f9b34fb'
@@ -2387,7 +2448,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             await waitMs(300);
                         }
 
-                        let txt = `\\x1B\\x61\\x01${settings.storeName}\\n${order.time} | ID: ${order.id}\\nKasir: ${cName} (S${order.shift})\\n--------------------------------\\nPemesan: ${order.customer}\\n--------------------------------\\n\\x1B\\x61\\x00`;
+                        let txt = "\x1B\x61\x01" + `${settings.storeName}\n${order.time} | ID: ${order.id}\nKasir: ${cName} (S${order.shift})\n--------------------------------\nPemesan: ${order.customer}\n--------------------------------\n` + "\x1B\x61\x00";
 
                         order.items.forEach(i => {
                             let st = i.assignedTo ? ` [${i.assignedTo}]` : '';
@@ -2396,7 +2457,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             txt += `Rp ${formatRpText(i.price * i.qty)}\\n`;
                         });
 
-                        txt += printTotalsText + `\\x1B\\x61\\x01${settings.footer}\\n\\n\\n\\n`;
+                        txt += printTotalsText + "\x1B\x61\x01" + `${settings.footer}\n\n\n\n`;
 
                         await writeBluetoothData(
                             printerKasirCharacteristic,
@@ -2419,7 +2480,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             { chunk: 32, delay: 20 }
                         );
 
-                        let txt = `\\x1B\\x61\\x01*** TIKET OPERASIONAL ***\\n${order.time} | ID: ${order.id}\\nPemesan: ${order.customer}\\n--------------------------------\\n\\x1B\\x61\\x00`;
+                        let txt = "\x1B\x61\x01" + `*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n` + "\x1B\x61\x00";
 
                         order.items.forEach(i => {
                             let st = i.assignedTo ? `\\n   -> Petugas: ${i.assignedTo}` : '';
@@ -2428,7 +2489,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             txt += `\\n`;
                         });
 
-                        txt += `--------------------------------\\n\\n\\n\\n`;
+                        txt += `--------------------------------\n\n\n\n`;
 
                         await writeBluetoothData(
                             printerDapurCharacteristic,
