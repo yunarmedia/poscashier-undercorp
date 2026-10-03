@@ -297,8 +297,7 @@
                 <div class="form-group" style="margin-bottom: 0;">
                     <label style="color: var(--success); font-weight: 900; font-size: 14px;">📅 TAMPILKAN DATA TANGGAL:</label>
                     <input type="date" id="revenueDate" onchange="renderRevenue(); renderExpenses();" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--success); font-weight: 800; font-size: 16px; color: var(--success); background: #fff;">
-                </div>
-            </div>
+                </div>            </div>
 
             <div class="card" style="margin-bottom: 20px;">
                 <h3 style="margin-bottom:15px; font-weight: 800;">Manajemen Petty Cash & Export Laporan</h3>
@@ -579,7 +578,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.1.8";
+        const APP_VERSION = "1.1.9";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -597,8 +596,7 @@
                     return Number.isFinite(n) ? n : 0;
                 });
 
-            const left = normalize(a);
-            const right = normalize(b);
+            const left = normalize(a);            const right = normalize(b);
             const length = Math.max(left.length, right.length);
 
             for (let i = 0; i < length; i++) {
@@ -897,8 +895,7 @@
             // Gunakan komponen tanggal lokal hanya jika timestamp memang eksplisit.
             if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
                 const isoDate = raw.slice(0, 10);
-                return isValidISODate(isoDate) ? isoDate : null;
-            }
+                return isValidISODate(isoDate) ? isoDate : null;            }
 
             return null;
         }
@@ -1197,8 +1194,7 @@ let settings = readLocalJSON('settings', defaultSettings);
 
         function recordsFromV2(data) {
             if (!data || typeof data !== 'object') return [];
-            return Object.values(data)
-                .filter(record => record && typeof record === 'object' && record._deleted !== true)
+            return Object.values(data)                .filter(record => record && typeof record === 'object' && record._deleted !== true)
                 .map(decodeFirebaseRecord);
         }
 
@@ -1497,8 +1493,7 @@ let settings = readLocalJSON('settings', defaultSettings);
         async function deleteRecordFromCloud(key, id) {
             const targetId = String(id);
             const collection = key === 'orders' ? ORDERS_V2_PATH : EXPENSES_V2_PATH;
-            const revision = Date.now();
-            const ref = db.ref(collection + '/' + encodeFirebaseKey(targetId));
+            const revision = Date.now();            const ref = db.ref(collection + '/' + encodeFirebaseKey(targetId));
 
             try {
                 // Tombstone, bukan remove(): device lama yang masih memiliki record
@@ -1797,8 +1792,7 @@ let settings = readLocalJSON('settings', defaultSettings);
             }
             
             syncToCloud('expenses', expenses);
-            cancelEditExpense();
-            if (isPageActive('expenses')) renderExpenses(); 
+            cancelEditExpense();            if (isPageActive('expenses')) renderExpenses(); 
             if (isPageActive('revenue')) renderRevenue(); 
         }
 
@@ -2059,11 +2053,19 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         }
 
         async function writeBluetoothData(characteristic, bufferArray, options = {}) {
-            const CHUNK = options.chunk || 128;
-            const DELAY = options.delay ?? 8;
-            for (let i = 0; i < bufferArray.length; i += CHUNK) {
-                await characteristic.writeValue(bufferArray.slice(i, i + CHUNK));
-                if (DELAY > 0) await new Promise(resolve => setTimeout(resolve, DELAY));
+            if (!characteristic || !bufferArray || !bufferArray.length) return;
+
+            const data = bufferArray instanceof Uint8Array
+                ? bufferArray
+                : new Uint8Array(bufferArray);
+
+            const CHUNK = options.chunk || 96;
+            const DELAY = options.delay ?? 20;
+
+            for (let i = 0; i < data.length; i += CHUNK) {
+                const chunk = data.slice(i, Math.min(i + CHUNK, data.length));
+                await characteristic.writeValue(chunk);
+                if (DELAY > 0) await waitMs(DELAY);
             }
         }
         function encodePrinterText(text) {
@@ -2097,8 +2099,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             });
         }
         const PRINTER_BLE_PROFILES = [
-            {
-                service: '000018f0-0000-1000-8000-00805f9b34fb',
+            {                service: '000018f0-0000-1000-8000-00805f9b34fb',
                 characteristic: '00002af1-0000-1000-8000-00805f9b34fb'
             },
             {
@@ -2353,35 +2354,96 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
 
         async function executePrint(order, isIncomingWebOrder = false) {
             if(!document.getElementById('btAutoPrint').checked && order.id !== 'TEST' && order.id !== 'SMENTARA' && order.status !== 'selesai' && !isIncomingWebOrder) return;
-            let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name; let success = false;
-            let printTotalsText = `--------------------------------\n`;
-            if (order.discount && order.discount > 0) { printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\nDISKON      : -Rp ${formatRpText(order.discount)}\n`; }
-            printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\nMETODE BAYAR: ${order.payment.toUpperCase()}\n--------------------------------\n`;
 
-            if (printerKasirCharacteristic) {
-                try {
-                    // OKAY 58D SAFE LOGO:
-                    // Jangan kirim bitmap logo melalui Bluetooth 58D karena firmware
-                    // membaca sebagian payload gambar sebagai karakter acak.
-                    // Logo dibuat sebagai text mark ESC/POS agar tetap tampil stabil.
-                    let txt = "\x1B\x40\x1B\x61\x01" +
-                        `WARMINDO D'SAMBER\n` +
-                        `\\x1B\\x21\\x08${settings.storeName}\\x1B\\x21\\x00\n` +
-                        `${order.time} | ID: ${order.id}\nKasir: ${cName} (S${order.shift})\n--------------------------------\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`; 
-                    order.items.forEach(i => { let st = i.assignedTo ? ` [${i.assignedTo}]` : ''; txt += `${i.name}${st} (x${i.qty})\n`; if(i.note) txt += `   *Cat: ${i.note}\n`; txt += `Rp ${formatRpText(i.price * i.qty)}\n`; });
-                    txt += printTotalsText + `\x1B\x61\x01${settings.footer}\n\n\n\n`;
-                    await writeBluetoothData(printerKasirCharacteristic, encodePrinterText(txt)); success = true;
-                } catch (e) { console.log(e); }
-            }
-            if (printerDapurCharacteristic) {
-                try {
-                    let txt = "\x1B\x40\x1B\x61\x01" + `*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`; 
-                    order.items.forEach(i => { let st = i.assignedTo ? `\n   -> Petugas: ${i.assignedTo}` : ''; txt += `[ ${i.qty}x ] ${i.name}${st}\n`; if(i.note) txt += `   *** Cat: ${i.note} ***\n`; txt += `\n`; });
-                    txt += `--------------------------------\n\n\n\n`;
-                    await writeBluetoothData(printerDapurCharacteristic, encodePrinterText(txt)); success = true;
-                } catch (e) { console.log(e); }
-            }
-            if (!success) {
+            return runPrinterJob(async () => {
+                let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name;
+                let success = false;
+                let printTotalsText = `--------------------------------\\n`;
+
+                if (order.discount && order.discount > 0) {
+                    printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\\nDISKON      : -Rp ${formatRpText(order.discount)}\\n`;
+                }
+
+                printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\\nMETODE BAYAR: ${String(order.payment || '').toUpperCase()}\\n--------------------------------\\n`;
+
+                if (printerKasirCharacteristic) {
+                    try {
+                        // Printer kasir: logo dan teks dikirim sebagai dua tahap.
+                        // Ini mencegah payload bitmap besar langsung diikuti karakter teks
+                        // sebelum firmware OKAY 58D selesai memproses gambar.
+                        await writeBluetoothData(
+                            printerKasirCharacteristic,
+                            new Uint8Array([0x1B, 0x40, 0x1B, 0x61, 0x01]),
+                            { chunk: 32, delay: 20 }
+                        );
+
+                        if (settings.logoBase64) {
+                            const logoBuffer = await getESCPOSImage(settings.logoBase64);
+                            await writeBluetoothData(
+                                printerKasirCharacteristic,
+                                logoBuffer,
+                                { chunk: 96, delay: 20 }
+                            );
+                            await waitMs(300);
+                        }
+
+                        let txt = `\\x1B\\x61\\x01${settings.storeName}\\n${order.time} | ID: ${order.id}\\nKasir: ${cName} (S${order.shift})\\n--------------------------------\\nPemesan: ${order.customer}\\n--------------------------------\\n\\x1B\\x61\\x00`;
+
+                        order.items.forEach(i => {
+                            let st = i.assignedTo ? ` [${i.assignedTo}]` : '';
+                            txt += `${i.name}${st} (x${i.qty})\\n`;
+                            if(i.note) txt += `   *Cat: ${i.note}\\n`;
+                            txt += `Rp ${formatRpText(i.price * i.qty)}\\n`;
+                        });
+
+                        txt += printTotalsText + `\\x1B\\x61\\x01${settings.footer}\\n\\n\\n\\n`;
+
+                        await writeBluetoothData(
+                            printerKasirCharacteristic,
+                            encodePrinterText(txt),
+                            { chunk: 96, delay: 20 }
+                        );
+                        await waitMs(250);
+                        success = true;
+                    } catch (e) {
+                        console.error("[Printer Kasir]", e);
+                        try { printerKasirCharacteristic = null; } catch (_) {}
+                    }
+                }
+
+                if (printerDapurCharacteristic) {
+                    try {
+                        await writeBluetoothData(
+                            printerDapurCharacteristic,
+                            new Uint8Array([0x1B, 0x40]),
+                            { chunk: 32, delay: 20 }
+                        );
+
+                        let txt = `\\x1B\\x61\\x01*** TIKET OPERASIONAL ***\\n${order.time} | ID: ${order.id}\\nPemesan: ${order.customer}\\n--------------------------------\\n\\x1B\\x61\\x00`;
+
+                        order.items.forEach(i => {
+                            let st = i.assignedTo ? `\\n   -> Petugas: ${i.assignedTo}` : '';
+                            txt += `[ ${i.qty}x ] ${i.name}${st}\\n`;
+                            if(i.note) txt += `   *** Cat: ${i.note} ***\\n`;
+                            txt += `\\n`;
+                        });
+
+                        txt += `--------------------------------\\n\\n\\n\\n`;
+
+                        await writeBluetoothData(
+                            printerDapurCharacteristic,
+                            encodePrinterText(txt),
+                            { chunk: 96, delay: 20 }
+                        );
+                        await waitMs(150);
+                        success = true;
+                    } catch (e) {
+                        console.error("[Printer Dapur]", e);
+                        try { printerDapurCharacteristic = null; } catch (_) {}
+                    }
+                }
+
+                if (!success) {
                     showToast("Bluetooth belum terkoneksi! Mengalihkan ke print layar browser...", "warning");
                     let p = document.getElementById('printReceiptArea');
                     let lh = settings.logoBase64 ? `<img src="${settings.logoBase64}" style="max-width:150px; display:block; margin:0 auto 10px auto;">` : '';
@@ -2398,7 +2460,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                         html += `<div class="print-flex"><span style="font-size:12px;">Subtotal</span><span style="font-size:12px;">${formatRp(order.subtotal || (order.total + order.discount))}</span></div><div class="print-flex"><span style="font-size:12px;">Diskon</span><span style="font-size:12px;">-${formatRp(order.discount)}</span></div>`;
                     }
 
-                    let ft = settings.footer.replace(/\n/g, '<br>');
+                    let ft = settings.footer.replace(/\\n/g, '<br>');
                     html += `<div class="print-flex"><strong style="font-size:14px;">TOTAL</strong><strong style="font-size:14px;">${formatRp(order.total)}</strong></div><div class="print-flex"><span style="font-size:12px;">Status/Metode</span><span style="font-size:12px; font-weight:bold;">${String(order.payment || '').toUpperCase()}</span></div><div class="print-divider"></div><div class="print-center" style="margin-top:10px;">${ft}</div>`;
 
                     p.innerHTML = html;
@@ -2406,8 +2468,8 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     window.print();
                     p.style.display = 'none';
                 }
+            });
         }
-
         function setTodayDate() {
             const revInput = document.getElementById('revenueDate');
             if (!revInput) return;
