@@ -2419,52 +2419,71 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             return runPrinterJob(async () => {
                 let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name;
                 let success = false;
-                let printTotalsText = `--------------------------------\n`;
 
-                if (order.discount && order.discount > 0) {
-                    printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\nDISKON      : -Rp ${formatRpText(order.discount)}\n`;
-                }
-
-                printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\nMETODE BAYAR: ${String(order.payment || '').toUpperCase()}\n--------------------------------\n`;
-
+                // v1.2.2: transaksi Bluetooth dibuat TEXT-ONLY terlebih dahulu.
+                // Semua command ESC/POS dikirim sebagai byte terpisah dari teks.
+                // Logo bitmap sengaja tidak dikirim pada jalur transaksi sampai jalur teks
+                // benar-benar bersih; payload bitmap sebelumnya terbukti menghasilkan
+                // karakter acak pada OKAY 58D.
                 if (printerKasirCharacteristic) {
                     try {
-                        // Printer kasir: logo dan teks dikirim sebagai dua tahap.
-                        // Ini mencegah payload bitmap besar langsung diikuti karakter teks
-                        // sebelum firmware OKAY 58D selesai memproses gambar.
-                        await writeBluetoothData(
-                            printerKasirCharacteristic,
-                            new Uint8Array([0x1B, 0x40, 0x1B, 0x61, 0x01]),
-                            { chunk: 32, delay: 20 }
-                        );
-
-                        if (settings.logoBase64) {
-                            const logoBuffer = await getESCPOSImage(settings.logoBase64);
+                        const writeCmd = async (bytes, chunk = 32, delay = 35) => {
                             await writeBluetoothData(
                                 printerKasirCharacteristic,
-                                logoBuffer,
-                                { chunk: 96, delay: 20 }
+                                new Uint8Array(bytes),
+                                { chunk, delay }
                             );
-                            await waitMs(300);
+                        };
+
+                        const writeText = async (text) => {
+                            await writeBluetoothData(
+                                printerKasirCharacteristic,
+                                encodePrinterText(text),
+                                { chunk: 48, delay: 35 }
+                            );
+                        };
+
+                        await writeCmd([0x1B, 0x40]);       // ESC @
+                        await writeCmd([0x1B, 0x61, 0x01]); // center
+
+                        await writeText(
+                            String(settings.storeName || '') + "\n" +
+                            String(order.time || '') + " | ID: " + String(order.id || '') + "\n" +
+                            "Kasir: " + String(cName || '') + " (S" + String(order.shift || '') + ")\n" +
+                            "--------------------------------\n" +
+                            "Pemesan: " + String(order.customer || '') + "\n" +
+                            "--------------------------------\n"
+                        );
+
+                        await writeCmd([0x1B, 0x61, 0x00]); // left
+
+                        for (const i of (order.items || [])) {
+                            const st = i.assignedTo ? " [" + String(i.assignedTo) + "]" : "";
+                            let itemText = String(i.name || '') + st + " (x" + String(i.qty || 0) + ")\n";
+                            if(i.note) itemText += "   *Cat: " + String(i.note) + "\n";
+                            itemText += "Rp " + formatRpText(i.price * i.qty) + "\n";
+                            await writeText(itemText);
                         }
 
-                        let txt = "\x1B\x61\x01" + `${settings.storeName}\n${order.time} | ID: ${order.id}\nKasir: ${cName} (S${order.shift})\n--------------------------------\nPemesan: ${order.customer}\n--------------------------------\n` + "\x1B\x61\x00";
+                        await writeText("--------------------------------\n");
 
-                        order.items.forEach(i => {
-                            let st = i.assignedTo ? ` [${i.assignedTo}]` : '';
-                            txt += `${i.name}${st} (x${i.qty})\n`;
-                            if(i.note) txt += `   *Cat: ${i.note}\n`;
-                            txt += `Rp ${formatRpText(i.price * i.qty)}\n`;
-                        });
+                        if (order.discount && order.discount > 0) {
+                            await writeText(
+                                "SUBTOTAL    : Rp " + formatRpText(order.subtotal || (order.total + order.discount)) + "\n" +
+                                "DISKON      : -Rp " + formatRpText(order.discount) + "\n"
+                            );
+                        }
 
-                        txt += printTotalsText + "\x1B\x61\x01" + `${settings.footer}\n\n\n\n`;
-
-                        await writeBluetoothData(
-                            printerKasirCharacteristic,
-                            encodePrinterText(txt),
-                            { chunk: 96, delay: 20 }
+                        await writeText(
+                            "TOTAL       : Rp " + formatRpText(order.total) + "\n" +
+                            "METODE BAYAR: " + String(order.payment || '').toUpperCase() + "\n" +
+                            "--------------------------------\n"
                         );
-                        await waitMs(250);
+
+                        await writeCmd([0x1B, 0x61, 0x01]); // center
+                        await writeText(String(settings.footer || '') + "\n\n\n\n");
+
+                        await waitMs(300);
                         success = true;
                     } catch (e) {
                         console.error("[Printer Kasir]", e);
@@ -2474,29 +2493,44 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
 
                 if (printerDapurCharacteristic) {
                     try {
-                        await writeBluetoothData(
-                            printerDapurCharacteristic,
-                            new Uint8Array([0x1B, 0x40]),
-                            { chunk: 32, delay: 20 }
+                        const writeCmdDapur = async (bytes, chunk = 32, delay = 35) => {
+                            await writeBluetoothData(
+                                printerDapurCharacteristic,
+                                new Uint8Array(bytes),
+                                { chunk, delay }
+                            );
+                        };
+
+                        const writeTextDapur = async (text) => {
+                            await writeBluetoothData(
+                                printerDapurCharacteristic,
+                                encodePrinterText(text),
+                                { chunk: 48, delay: 35 }
+                            );
+                        };
+
+                        await writeCmdDapur([0x1B, 0x40]);
+                        await writeCmdDapur([0x1B, 0x61, 0x01]);
+
+                        await writeTextDapur(
+                            "*** TIKET OPERASIONAL ***\n" +
+                            String(order.time || '') + " | ID: " + String(order.id || '') + "\n" +
+                            "Pemesan: " + String(order.customer || '') + "\n" +
+                            "--------------------------------\n"
                         );
 
-                        let txt = "\x1B\x61\x01" + `*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n` + "\x1B\x61\x00";
+                        await writeCmdDapur([0x1B, 0x61, 0x00]);
 
-                        order.items.forEach(i => {
-                            let st = i.assignedTo ? `\n   -> Petugas: ${i.assignedTo}` : '';
-                            txt += `[ ${i.qty}x ] ${i.name}${st}\n`;
-                            if(i.note) txt += `   *** Cat: ${i.note} ***\n`;
-                            txt += `\n`;
-                        });
+                        for (const i of (order.items || [])) {
+                            let st = i.assignedTo ? "\n   -> Petugas: " + String(i.assignedTo) : "";
+                            let itemText = "[ " + String(i.qty || 0) + "x ] " + String(i.name || '') + st + "\n";
+                            if(i.note) itemText += "   *** Cat: " + String(i.note) + " ***\n";
+                            itemText += "\n";
+                            await writeTextDapur(itemText);
+                        }
 
-                        txt += `--------------------------------\n\n\n\n`;
-
-                        await writeBluetoothData(
-                            printerDapurCharacteristic,
-                            encodePrinterText(txt),
-                            { chunk: 96, delay: 20 }
-                        );
-                        await waitMs(150);
+                        await writeTextDapur("--------------------------------\n\n\n\n");
+                        await waitMs(200);
                         success = true;
                     } catch (e) {
                         console.error("[Printer Dapur]", e);
@@ -2510,7 +2544,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     let lh = settings.logoBase64 ? `<img src="${settings.logoBase64}" style="max-width:150px; display:block; margin:0 auto 10px auto;">` : '';
                     let html = `<div class="print-center">${lh}<strong style="font-size:16px;">${settings.storeName}</strong><br>${order.time} | ID: ${order.id}<br>Kasir: ${cName}</div><div class="print-divider"></div><div>Pemesan: ${order.customer}</div><div class="print-divider"></div>`;
 
-                    order.items.forEach(i => {
+                    (order.items || []).forEach(i => {
                         let st = i.assignedTo ? ` [${i.assignedTo}]` : '';
                         let no = i.note ? `<br><span class="print-note">*Catatan: ${i.note}</span>` : '';
                         html += `<div class="print-flex" style="align-items:start;"><span>${i.name}${st} (x${i.qty})${no}</span><span>${formatRp(i.price * i.qty)}</span></div>`;
@@ -2531,6 +2565,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 }
             });
         }
+
         function setTodayDate() {
             const revInput = document.getElementById('revenueDate');
             if (!revInput) return;
