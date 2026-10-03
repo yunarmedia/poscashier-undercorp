@@ -2240,7 +2240,34 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 showToast("Gagal konek OKAY 58D: " + (e?.message || "periksa Bluetooth"), "error");
             }
         }
-        function testPrint() { executePrint({ id: "TEST", time: getTimestamp(), customer: "TEST", subtotal: 10000, discount: 0, total: 10000, shift: settings.activeShift, payment: "TEST", items: [{name: "Item Test", qty: 1, price: 10000}] }); showToast("Test print dikirim", "info"); }
+        async function testPrint() {
+            if (!printerKasirCharacteristic) {
+                showToast("Bluetooth printer kasir belum terkoneksi.", "warning");
+                return;
+            }
+
+            try {
+                // DIAGNOSTIC TEST ONLY:
+                // Kirim raw ESC/POS paling sederhana tanpa logo, gambar, atau formatting.
+                // Tujuannya memastikan characteristic Bluetooth yang dipilih memang jalur print OKAY 58D.
+                const rawTest = new Uint8Array([
+                    0x1B, 0x40,
+                    0x1B, 0x61, 0x01,
+                    ...encodePrinterText("OKAY 58D TEST\\n"),
+                    0x1B, 0x61, 0x00,
+                    ...encodePrinterText("HELLO 58D\\n"),
+                    ...encodePrinterText("1234567890\\n"),
+                    ...encodePrinterText("----------------\\n"),
+                    0x0A, 0x0A, 0x0A
+                ]);
+
+                await writeBluetoothData(printerKasirCharacteristic, rawTest);
+                showToast("TEST RAW 58D terkirim.", "success");
+            } catch (e) {
+                console.error("[Printer RAW TEST]", e);
+                showToast("RAW TEST gagal: " + (e?.message || "unknown error"), "error");
+            }
+        }
 
         // RENDER KATEGORI MENU HANYA SEKALI
         function renderCategories() {
