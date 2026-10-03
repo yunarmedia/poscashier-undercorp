@@ -2263,10 +2263,10 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 // Jika output masih menjadi karakter acak, masalah berada pada jalur
                 // Bluetooth/characteristic/protokol printer, bukan pada layout struk.
                 const rawTest = encodePrinterText(
-                    "OKAY 58D RAW TEST\\n" +
-                    "HELLO 58D\\n" +
-                    "1234567890\\n" +
-                    "----------------\\n\\n\\n"
+                    "OKAY 58D RAW TEST\n" +
+                    "HELLO 58D\n" +
+                    "1234567890\n" +
+                    "----------------\n\n\n"
                 );
 
                 await writeBluetoothData(printerKasirCharacteristic, rawTest);
@@ -2498,7 +2498,10 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                         // the printer in an active/misaligned ESC/POS state.
                         await writeBluetoothData(printerKasirCharacteristic, new Uint8Array([0x1B, 0x40]));
 
-                        if (settings.logoBase64) {
+                        // DIAGNOSTIC: logo bitmap temporarily disabled.
+                        // ASCII Bluetooth printing is confirmed working; isolate the
+                        // bitmap payload because it is producing the random-character block.
+                        if (false && settings.logoBase64) {
                             let img = await getESCPOSImage(settings.logoBase64);
                             await writeBluetoothData(printerKasirCharacteristic, img);
                             await waitMs(40);
