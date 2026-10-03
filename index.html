@@ -578,7 +578,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.2.0";
+        const APP_VERSION = "1.2.1";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -2419,13 +2419,13 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             return runPrinterJob(async () => {
                 let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name;
                 let success = false;
-                let printTotalsText = `--------------------------------\\n`;
+                let printTotalsText = `--------------------------------\n`;
 
                 if (order.discount && order.discount > 0) {
-                    printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\\nDISKON      : -Rp ${formatRpText(order.discount)}\\n`;
+                    printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\nDISKON      : -Rp ${formatRpText(order.discount)}\n`;
                 }
 
-                printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\\nMETODE BAYAR: ${String(order.payment || '').toUpperCase()}\\n--------------------------------\\n`;
+                printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\nMETODE BAYAR: ${String(order.payment || '').toUpperCase()}\n--------------------------------\n`;
 
                 if (printerKasirCharacteristic) {
                     try {
@@ -2452,9 +2452,9 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
 
                         order.items.forEach(i => {
                             let st = i.assignedTo ? ` [${i.assignedTo}]` : '';
-                            txt += `${i.name}${st} (x${i.qty})\\n`;
-                            if(i.note) txt += `   *Cat: ${i.note}\\n`;
-                            txt += `Rp ${formatRpText(i.price * i.qty)}\\n`;
+                            txt += `${i.name}${st} (x${i.qty})\n`;
+                            if(i.note) txt += `   *Cat: ${i.note}\n`;
+                            txt += `Rp ${formatRpText(i.price * i.qty)}\n`;
                         });
 
                         txt += printTotalsText + "\x1B\x61\x01" + `${settings.footer}\n\n\n\n`;
@@ -2483,10 +2483,10 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                         let txt = "\x1B\x61\x01" + `*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n` + "\x1B\x61\x00";
 
                         order.items.forEach(i => {
-                            let st = i.assignedTo ? `\\n   -> Petugas: ${i.assignedTo}` : '';
-                            txt += `[ ${i.qty}x ] ${i.name}${st}\\n`;
-                            if(i.note) txt += `   *** Cat: ${i.note} ***\\n`;
-                            txt += `\\n`;
+                            let st = i.assignedTo ? `\n   -> Petugas: ${i.assignedTo}` : '';
+                            txt += `[ ${i.qty}x ] ${i.name}${st}\n`;
+                            if(i.note) txt += `   *** Cat: ${i.note} ***\n`;
+                            txt += `\n`;
                         });
 
                         txt += `--------------------------------\n\n\n\n`;
