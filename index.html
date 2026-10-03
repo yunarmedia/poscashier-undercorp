@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.1.1";
+        const APP_VERSION = "1.1.2";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -2055,27 +2055,31 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 : new Uint8Array(bufferArray);
 
             await enqueuePrinterWrite(async () => {
-                // Thermal Bluetooth printers commonly have small receive buffers.
-                // Keep packets conservative to prevent dropped/misaligned ESC/POS bytes.
+                // OKAY 58D memakai buffer BLE kecil; kirim paket konservatif.
                 const CHUNK = 48;
-                const GAP = 28;
+                const GAP = 35;
 
                 for (let i = 0; i < data.length; i += CHUNK) {
                     const chunk = data.slice(i, Math.min(i + CHUNK, data.length));
                     let lastError = null;
 
-                    for (let attempt = 1; attempt <= 2; attempt++) {
+                    for (let attempt = 1; attempt <= 3; attempt++) {
                         try {
-                            if (typeof characteristic.writeValueWithResponse === 'function') {
+                            const props = characteristic.properties || {};
+                            if (props.write && typeof characteristic.writeValueWithResponse === 'function') {
                                 await characteristic.writeValueWithResponse(chunk);
-                            } else {
+                            } else if (props.writeWithoutResponse && typeof characteristic.writeValueWithoutResponse === 'function') {
+                                await characteristic.writeValueWithoutResponse(chunk);
+                            } else if (typeof characteristic.writeValue === 'function') {
                                 await characteristic.writeValue(chunk);
+                            } else {
+                                throw new Error('Karakteristik Bluetooth tidak memiliki kemampuan write.');
                             }
                             lastError = null;
                             break;
                         } catch (err) {
                             lastError = err;
-                            if (attempt < 2) await waitMs(80);
+                            if (attempt < 3) await waitMs(100);
                         }
                     }
 
@@ -2086,15 +2090,16 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         }
 
         function encodePrinterText(text) {
-            // Keep ESC/POS text strictly single-byte for maximum compatibility.
-            // Indonesian POS text is intentionally normalized to printer-safe ASCII.
+            // OKAY 58D menggunakan karakter single-byte ESC/POS.
+            // Semua teks struk dinormalisasi ke ASCII agar tidak muncul karakter acak.
             return new Uint8Array(Array.from(String(text ?? '')
                 .replace(/[–—]/g, '-')
-                .replace(/“|”/g, '"')
+                .replace(/[“”]/g, '"')
                 .replace(/[‘’]/g, "'")
                 .replace(/…/g, '...')
-                .replace(/[^\\x00-\\x7F]/g, '?')
-                .split('').map(ch => ch.charCodeAt(0))));
+                .replace(/[^\x00-\x7F]/g, '?')
+                .split('')
+                .map(ch => ch.charCodeAt(0))));
         }
 
         async function runPrinterJob(job) {
@@ -2102,25 +2107,138 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             printerJobQueue = run.catch(() => {});
             return run;
         }
+
         async function getESCPOSImage(base64str) {
-            return new Promise((resolve) => {
-                let img = new Image(); img.onload = () => {
-                    let canvas = document.createElement('canvas'); let ctx = canvas.getContext('2d'); let width = 200; let height = Math.round((width * img.height) / img.width);
-                    canvas.width = width; canvas.height = height; ctx.fillStyle = "white"; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height);
-                    let imgData = ctx.getImageData(0, 0, width, height).data; let bytesWidth = Math.ceil(width / 8); let buffer = new Uint8Array(8 + (bytesWidth * height));
-                    buffer[0]=0x1D; buffer[1]=0x76; buffer[2]=0x30; buffer[3]=0x00; buffer[4]=bytesWidth&0xFF; buffer[5]=(bytesWidth>>8)&0xFF; buffer[6]=height&0xFF; buffer[7]=(height>>8)&0xFF;
-                    let offset = 8; for(let y=0; y<height; y++){ for(let x=0; x<bytesWidth; x++){ let byte = 0; for(let b=0; b<8; b++){ let px=(x*8)+b; if(px<width){ let idx=(y*width+px)*4; let lum=(imgData[idx]*0.299)+(imgData[idx+1]*0.587)+(imgData[idx+2]*0.114); if(lum<128) byte|=(1<<(7-b)); } } buffer[offset++]=byte; } } resolve(buffer);
-                }; img.src = base64str;
+            return new Promise((resolve, reject) => {
+                let img = new Image();
+                img.onload = () => {
+                    try {
+                        let canvas = document.createElement('canvas');
+                        let ctx = canvas.getContext('2d');
+                        let width = 200;
+                        let height = Math.round((width * img.height) / img.width);
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.fillStyle = "white";
+                        ctx.fillRect(0, 0, width, height);
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        let imgData = ctx.getImageData(0, 0, width, height).data;
+                        let bytesWidth = Math.ceil(width / 8);
+                        let buffer = new Uint8Array(8 + (bytesWidth * height));
+                        buffer[0]=0x1D; buffer[1]=0x76; buffer[2]=0x30; buffer[3]=0x00;
+                        buffer[4]=bytesWidth&0xFF; buffer[5]=(bytesWidth>>8)&0xFF;
+                        buffer[6]=height&0xFF; buffer[7]=(height>>8)&0xFF;
+
+                        let offset = 8;
+                        for(let y=0; y<height; y++){
+                            for(let x=0; x<bytesWidth; x++){
+                                let byte = 0;
+                                for(let b=0; b<8; b++){
+                                    let px=(x*8)+b;
+                                    if(px<width){
+                                        let idx=(y*width+px)*4;
+                                        let lum=(imgData[idx]*0.299)+(imgData[idx+1]*0.587)+(imgData[idx+2]*0.114);
+                                        if(lum<128) byte|=(1<<(7-b));
+                                    }
+                                }
+                                buffer[offset++]=byte;
+                            }
+                        }
+                        resolve(buffer);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                img.onerror = () => reject(new Error('Logo printer gagal diproses.'));
+                img.src = base64str;
             });
         }
+
+        const PRINTER_BLE_PROFILES = [
+            {
+                service: '000018f0-0000-1000-8000-00805f9b34fb',
+                characteristic: '00002af1-0000-1000-8000-00805f9b34fb'
+            },
+            {
+                service: 'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+                characteristic: null
+            },
+            {
+                service: '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+                characteristic: null
+            }
+        ];
+
+        async function findPrinterWriteCharacteristic(server) {
+            // Utamakan profil printer thermal umum, lalu cari characteristic yang
+            // benar-benar memiliki properti write/writeWithoutResponse.
+            for (const profile of PRINTER_BLE_PROFILES) {
+                try {
+                    const service = await server.getPrimaryService(profile.service);
+
+                    if (profile.characteristic) {
+                        try {
+                            const preferred = await service.getCharacteristic(profile.characteristic);
+                            const p = preferred.properties || {};
+                            if (p.write || p.writeWithoutResponse) return preferred;
+                        } catch (_) {}
+                    }
+
+                    const chars = await service.getCharacteristics();
+                    const writable = chars.find(ch => {
+                        const p = ch.properties || {};
+                        return p.write || p.writeWithoutResponse;
+                    });
+                    if (writable) return writable;
+                } catch (_) {}
+            }
+
+            throw new Error('Tidak menemukan characteristic Bluetooth yang bisa menerima data.');
+        }
+
         async function connectPrinter(type) {
-            if (!navigator.bluetooth) { showToast("Browser tidak support Bluetooth", "error"); return; }
+            if (!navigator.bluetooth) {
+                showToast("Browser tidak support Bluetooth", "error");
+                return;
+            }
+
             try {
-                let device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '49535343-fe7d-4ae5-8fa9-9fafd205e455'] });
-                const server = await device.gatt.connect(); const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb'); const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-                if(type==='kasir') { printerKasirCharacteristic = characteristic; document.getElementById('btStatusKasir').innerText="🟢 "+device.name; document.getElementById('btStatusKasir').style.color="green"; } else { printerDapurCharacteristic = characteristic; document.getElementById('btStatusDapur').innerText="🟢 "+device.name; document.getElementById('btStatusDapur').style.color="green"; }
-                showToast("Tersambung ke Printer!", "success");
-            } catch (e) { showToast("Gagal konek printer", "error"); }
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: PRINTER_BLE_PROFILES.map(p => p.service)
+                });
+
+                if (!device.gatt) throw new Error('GATT Bluetooth tidak tersedia pada printer.');
+
+                const server = await device.gatt.connect();
+                const characteristic = await findPrinterWriteCharacteristic(server);
+
+                const statusEl = document.getElementById(type === 'kasir' ? 'btStatusKasir' : 'btStatusDapur');
+                const label = device.name || 'OKAY 58D';
+
+                if (statusEl) {
+                    statusEl.innerText = "🟢 " + label;
+                    statusEl.style.color = "green";
+                }
+
+                device.addEventListener('gattserverdisconnected', () => {
+                    if (type === 'kasir') printerKasirCharacteristic = null;
+                    else printerDapurCharacteristic = null;
+                    if (statusEl) {
+                        statusEl.innerText = "🔴 Disconnected";
+                        statusEl.style.color = "var(--danger)";
+                    }
+                });
+
+                if(type==='kasir') printerKasirCharacteristic = characteristic;
+                else printerDapurCharacteristic = characteristic;
+
+                showToast("OKAY 58D tersambung! Siap mencetak.", "success");
+            } catch (e) {
+                console.error("[Printer Bluetooth]", e);
+                showToast("Gagal konek OKAY 58D: " + (e?.message || "periksa Bluetooth"), "error");
+            }
         }
         function testPrint() { executePrint({ id: "TEST", time: getTimestamp(), customer: "TEST", subtotal: 10000, discount: 0, total: 10000, shift: settings.activeShift, payment: "TEST", items: [{name: "Item Test", qty: 1, price: 10000}] }); showToast("Test print dikirim", "info"); }
 
@@ -2332,12 +2450,12 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             return runPrinterJob(async () => {
                 let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name;
                 let success = false;
-                let printTotalsText = `--------------------------------\\n`;
+                let printTotalsText = `--------------------------------\n`;
 
                 if (order.discount && order.discount > 0) {
-                    printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\\nDISKON      : -Rp ${formatRpText(order.discount)}\\n`;
+                    printTotalsText += `SUBTOTAL    : Rp ${formatRpText(order.subtotal || (order.total + order.discount))}\nDISKON      : -Rp ${formatRpText(order.discount)}\n`;
                 }
-                printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\\nMETODE BAYAR: ${String(order.payment || '').toUpperCase()}\\n--------------------------------\\n`;
+                printTotalsText += `TOTAL       : Rp ${formatRpText(order.total)}\nMETODE BAYAR: ${String(order.payment || '').toUpperCase()}\n--------------------------------\n`;
 
                 if (printerKasirCharacteristic) {
                     try {
@@ -2351,16 +2469,16 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             await waitMs(40);
                         }
 
-                        let txt = `\\x1B\\x61\\x01${settings.storeName}\\n${order.time} | ID: ${order.id}\\nKasir: ${cName} (S${order.shift})\\n--------------------------------\\nPemesan: ${order.customer}\\n--------------------------------\\n\\x1B\\x61\\x00`;
+                        let txt = `\x1B\x61\x01${settings.storeName}\n${order.time} | ID: ${order.id}\nKasir: ${cName} (S${order.shift})\n--------------------------------\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`;
 
                         order.items.forEach(i => {
                             let st = i.assignedTo ? ` [${i.assignedTo}]` : '';
-                            txt += `${i.name}${st} (x${i.qty})\\n`;
-                            if(i.note) txt += `   *Cat: ${i.note}\\n`;
-                            txt += `Rp ${formatRpText(i.price * i.qty)}\\n`;
+                            txt += `${i.name}${st} (x${i.qty})\n`;
+                            if(i.note) txt += `   *Cat: ${i.note}\n`;
+                            txt += `Rp ${formatRpText(i.price * i.qty)}\n`;
                         });
 
-                        txt += printTotalsText + `\\x1B\\x61\\x01${settings.footer}\\n\\n\\n\\n`;
+                        txt += printTotalsText + `\x1B\x61\x01${settings.footer}\n\n\n\n`;
                         await writeBluetoothData(printerKasirCharacteristic, encodePrinterText(txt));
                         success = true;
                     } catch (e) {
@@ -2373,16 +2491,16 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     try {
                         await writeBluetoothData(printerDapurCharacteristic, new Uint8Array([0x1B, 0x40]));
 
-                        let txt = `\\x1B\\x61\\x01*** TIKET OPERASIONAL ***\\n${order.time} | ID: ${order.id}\\nPemesan: ${order.customer}\\n--------------------------------\\n\\x1B\\x61\\x00`;
+                        let txt = `\x1B\x61\x01*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`;
 
                         order.items.forEach(i => {
-                            let st = i.assignedTo ? `\\n   -> Petugas: ${i.assignedTo}` : '';
-                            txt += `[ ${i.qty}x ] ${i.name}${st}\\n`;
-                            if(i.note) txt += `   *** Cat: ${i.note} ***\\n`;
-                            txt += `\\n`;
+                            let st = i.assignedTo ? `\n   -> Petugas: ${i.assignedTo}` : '';
+                            txt += `[ ${i.qty}x ] ${i.name}${st}\n`;
+                            if(i.note) txt += `   *** Cat: ${i.note} ***\n`;
+                            txt += `\n`;
                         });
 
-                        txt += `--------------------------------\\n\\n\\n\\n`;
+                        txt += `--------------------------------\n\n\n\n`;
                         await writeBluetoothData(printerDapurCharacteristic, encodePrinterText(txt));
                         success = true;
                     } catch (e) {
@@ -2408,7 +2526,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                         html += `<div class="print-flex"><span style="font-size:12px;">Subtotal</span><span style="font-size:12px;">${formatRp(order.subtotal || (order.total + order.discount))}</span></div><div class="print-flex"><span style="font-size:12px;">Diskon</span><span style="font-size:12px;">-${formatRp(order.discount)}</span></div>`;
                     }
 
-                    let ft = settings.footer.replace(/\\n/g, '<br>');
+                    let ft = settings.footer.replace(/\n/g, '<br>');
                     html += `<div class="print-flex"><strong style="font-size:14px;">TOTAL</strong><strong style="font-size:14px;">${formatRp(order.total)}</strong></div><div class="print-flex"><span style="font-size:12px;">Status/Metode</span><span style="font-size:12px; font-weight:bold;">${String(order.payment || '').toUpperCase()}</span></div><div class="print-divider"></div><div class="print-center" style="margin-top:10px;">${ft}</div>`;
 
                     p.innerHTML = html;
