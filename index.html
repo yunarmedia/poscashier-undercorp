@@ -579,7 +579,7 @@
         // UPDATE CENTER & VERSION CONTROLLER
         // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.1.6";
+        const APP_VERSION = "1.1.7";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
@@ -2058,7 +2058,14 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             return run;
         }
 
-        async function writeBluetoothData(characteristic, bufferArray) { const CHUNK = 100; for (let i=0; i<bufferArray.length; i+=CHUNK) { await characteristic.writeValue(bufferArray.slice(i, i+CHUNK)); await new Promise(r => setTimeout(r, 20)); } }
+        async function writeBluetoothData(characteristic, bufferArray, options = {}) {
+            const CHUNK = options.chunk || 128;
+            const DELAY = options.delay ?? 8;
+            for (let i = 0; i < bufferArray.length; i += CHUNK) {
+                await characteristic.writeValue(bufferArray.slice(i, i + CHUNK));
+                if (DELAY > 0) await new Promise(resolve => setTimeout(resolve, DELAY));
+            }
+        }
         function encodePrinterText(text) {
             // OKAY 58D menggunakan karakter single-byte ESC/POS.
             // Semua teks struk dinormalisasi ke ASCII agar tidak muncul karakter acak.
@@ -2081,7 +2088,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         async function getESCPOSImage(base64str) {
             return new Promise((resolve) => {
                 let img = new Image(); img.onload = () => {
-                    let canvas = document.createElement('canvas'); let ctx = canvas.getContext('2d'); let width = 200; let height = Math.round((width * img.height) / img.width);
+                    let canvas = document.createElement('canvas'); let ctx = canvas.getContext('2d'); let width = 160; let height = Math.round((width * img.height) / img.width);
                     canvas.width = width; canvas.height = height; ctx.fillStyle = "white"; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height);
                     let imgData = ctx.getImageData(0, 0, width, height).data; let bytesWidth = Math.ceil(width / 8); let buffer = new Uint8Array(8 + (bytesWidth * height));
                     buffer[0]=0x1D; buffer[1]=0x76; buffer[2]=0x30; buffer[3]=0x00; buffer[4]=bytesWidth&0xFF; buffer[5]=(bytesWidth>>8)&0xFF; buffer[6]=height&0xFF; buffer[7]=(height>>8)&0xFF;
@@ -2353,14 +2360,16 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
 
             if (printerKasirCharacteristic) {
                 try {
-                    // SAFE MODE OKAY 58D:
-                    // Bitmap/logo Bluetooth dinonaktifkan sementara karena payload gambar
-                    // menyebabkan firmware 58D membaca data sebagai karakter acak.
-                    // Teks transaksi tetap dicetak normal.
+                    // OKAY 58D: logo dikirim lebih pelan daripada teks agar buffer printer stabil.
+                    if (settings.logoBase64) {
+                        const img = await getESCPOSImage(settings.logoBase64);
+                        await writeBluetoothData(printerKasirCharacteristic, img, { chunk: 64, delay: 18 });
+                        await waitMs(80);
+                    }
                     let txt = "\x1B\x40\x1B\x61\x01" + `${settings.storeName}\n${order.time} | ID: ${order.id}\nKasir: ${cName} (S${order.shift})\n--------------------------------\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`; 
                     order.items.forEach(i => { let st = i.assignedTo ? ` [${i.assignedTo}]` : ''; txt += `${i.name}${st} (x${i.qty})\n`; if(i.note) txt += `   *Cat: ${i.note}\n`; txt += `Rp ${formatRpText(i.price * i.qty)}\n`; });
                     txt += printTotalsText + `\x1B\x61\x01${settings.footer}\n\n\n\n`;
-                    await writeBluetoothData(printerKasirCharacteristic, new TextEncoder().encode(txt)); success = true;
+                    await writeBluetoothData(printerKasirCharacteristic, encodePrinterText(txt)); success = true;
                 } catch (e) { console.log(e); }
             }
             if (printerDapurCharacteristic) {
@@ -2368,7 +2377,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     let txt = "\x1B\x40\x1B\x61\x01" + `*** TIKET OPERASIONAL ***\n${order.time} | ID: ${order.id}\nPemesan: ${order.customer}\n--------------------------------\n\x1B\x61\x00`; 
                     order.items.forEach(i => { let st = i.assignedTo ? `\n   -> Petugas: ${i.assignedTo}` : ''; txt += `[ ${i.qty}x ] ${i.name}${st}\n`; if(i.note) txt += `   *** Cat: ${i.note} ***\n`; txt += `\n`; });
                     txt += `--------------------------------\n\n\n\n`;
-                    await writeBluetoothData(printerDapurCharacteristic, new TextEncoder().encode(txt)); success = true;
+                    await writeBluetoothData(printerDapurCharacteristic, encodePrinterText(txt)); success = true;
                 } catch (e) { console.log(e); }
             }
             if (!success) {
