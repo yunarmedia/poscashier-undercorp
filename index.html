@@ -2427,7 +2427,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 // karakter acak pada OKAY 58D.
                 if (printerKasirCharacteristic) {
                     try {
-                        const writeCmd = async (bytes, chunk = 32, delay = 35) => {
+                        const writeCmd = async (bytes, chunk = 32, delay = 15) => {
                             await writeBluetoothData(
                                 printerKasirCharacteristic,
                                 new Uint8Array(bytes),
@@ -2439,7 +2439,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             await writeBluetoothData(
                                 printerKasirCharacteristic,
                                 encodePrinterText(text),
-                                { chunk: 48, delay: 35 }
+                                { chunk: 48, delay: 15 }
                             );
                         };
 
@@ -2493,7 +2493,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
 
                 if (printerDapurCharacteristic) {
                     try {
-                        const writeCmdDapur = async (bytes, chunk = 32, delay = 35) => {
+                        const writeCmdDapur = async (bytes, chunk = 32, delay = 15) => {
                             await writeBluetoothData(
                                 printerDapurCharacteristic,
                                 new Uint8Array(bytes),
@@ -2505,7 +2505,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             await writeBluetoothData(
                                 printerDapurCharacteristic,
                                 encodePrinterText(text),
-                                { chunk: 48, delay: 35 }
+                                { chunk: 48, delay: 15 }
                             );
                         };
 
