@@ -1235,10 +1235,10 @@ let settings = readLocalJSON('settings', defaultSettings);
 
         function persistLocalData(key, dataObj) {
             try {
+                // Biarkan data utuh, JANGAN HAPUS FOTO DI SINI.
+                // Foto baru akan dihapus/dibersihkan di dalam fungsi syncToSheets() 
+                // HANYA setelah sukses terkirim ke Google Drive.
                 let localData = JSON.parse(JSON.stringify(dataObj));
-                if (key === 'expenses' && Array.isArray(localData)) {
-                    localData.forEach(exp => { if (exp.photo) exp.photo = "TERSIMPAN_DI_CLOUD"; });
-                }
 
                 const serialized = JSON.stringify(localData);
                 localStorage.setItem('pos_' + key, serialized);
@@ -1247,7 +1247,7 @@ let settings = readLocalJSON('settings', defaultSettings);
                 console.error('[LocalPersistence] Gagal menyimpan:', key, e);
             }
         }
-
+        
         function normalizeCloudRecord(record) {
             if (!record || typeof record !== 'object') return null;
             const copy = JSON.parse(JSON.stringify(record));
@@ -2010,6 +2010,57 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 return;
             }
 
+            let tc = 0, tq = 0, to = 0;
+            getReportOrders(targetDate).forEach(o => {
+                const amount = getSafeAmount(o.total);
+                if (o.payment === 'Cash') tc += amount;
+                else if (['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += amount;
+                else if (o.payment === 'QRIS') tq += amount;
+            });
+            
+            try {
+                // 1. Sinkronkan Laporan Omzet
+                await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
+                
+                let targetExpenses = getReportExpenses(targetDate);
+                let isPhotoCleaned = false; // Penanda apakah ada memori foto yang perlu dibersihkan
+
+                for (let e of targetExpenses) { 
+                    // 2. Kirim data penuh termasuk base64 foto ke Google Drive
+                    await fetch(url, { 
+                        method: 'POST', 
+                        mode: 'no-cors', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ 
+                            type: "pengeluaran", 
+                            date: targetDate, 
+                            payment: e.payment, 
+                            category: e.category, 
+                            name: e.name, 
+                            amount: e.amount,
+                            photo: e.photo || "" 
+                        }) 
+                    }); 
+                    
+                    // 3. SETELAH BERHASIL TERKIRIM, BERSIHKAN FOTO DARI MEMORI HP
+                    let idx = expenses.findIndex(exp => exp.id === e.id);
+                    if (idx !== -1 && expenses[idx].photo && expenses[idx].photo !== "TERSIMPAN_DI_CLOUD" && expenses[idx].photo !== "") {
+                        expenses[idx].photo = "TERSIMPAN_DI_CLOUD"; // Ganti dengan teks ringan agar HP tidak lemot
+                        isPhotoCleaned = true;
+                    }
+                }
+
+                // 4. Update data lokal dan Firebase dengan memori yang sudah dibersihkan
+                if (isPhotoCleaned) {
+                    persistLocalData('expenses', expenses);
+                    syncToCloud('expenses', expenses);
+                    if (isPageActive('expenses')) renderExpenses(); 
+                }
+
+                showToast("Sinkronisasi Selesai!", "success");
+            } catch (err) { showToast("Gagal terhubung ke Sheets", "error"); }
+        }
+        
             let tc = 0, tq = 0, to = 0;
             getReportOrders(targetDate).forEach(o => {
                 const amount = getSafeAmount(o.total);
