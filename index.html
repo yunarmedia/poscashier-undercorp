@@ -576,251 +576,122 @@
     <script>
         // ============================================================================
         // UPDATE CENTER & VERSION CONTROLLER
-        // UBAH ANGKA INI SETIAP KALI ANDA MENDEPLOY PERBAIKAN KE GITHUB
         // ============================================================================
-        const APP_VERSION = "1.2.2";
+        const APP_VERSION = "1.2.3";
         const VERSION_CHECK_PATH = 'system_config/latest_version';
         const UPDATE_RELOAD_FLAG = 'pos_update_reload_once';
 
-        // ------------------------------------------------------------------------
-        // VERSION UTILITIES
-        // ------------------------------------------------------------------------
-        // Membandingkan versi numerik: 1.0.10 > 1.0.2, bukan perbandingan string.
         function compareVersions(a, b) {
-            const normalize = (value) => String(value ?? '')
-                .trim()
-                .replace(/^v/i, '')
-                .split(/[.-]/)
-                .map(part => {
-                    const n = Number.parseInt(part, 10);
-                    return Number.isFinite(n) ? n : 0;
-                });
-
-            const left = normalize(a);            const right = normalize(b);
+            const normalize = (value) => String(value ?? '').trim().replace(/^v/i, '').split(/[.-]/).map(part => {
+                const n = Number.parseInt(part, 10);
+                return Number.isFinite(n) ? n : 0;
+            });
+            const left = normalize(a); const right = normalize(b);
             const length = Math.max(left.length, right.length);
-
             for (let i = 0; i < length; i++) {
-                const l = left[i] ?? 0;
-                const r = right[i] ?? 0;
-                if (l > r) return 1;
-                if (l < r) return -1;
+                const l = left[i] ?? 0; const r = right[i] ?? 0;
+                if (l > r) return 1; if (l < r) return -1;
             }
             return 0;
         }
 
-        function isValidVersion(value) {
-            return /^v?\d+(?:\.\d+){0,3}(?:[-.]?[A-Za-z0-9]+)?$/.test(String(value ?? '').trim());
-        }
-
-        function hideUpdateOverlay() {
-            const overlay = document.getElementById('updateOverlay');
-            if (overlay) overlay.style.display = 'none';
-        }
-
+        function isValidVersion(value) { return /^v?\d+(?:\.\d+){0,3}(?:[-.]?[A-Za-z0-9]+)?$/.test(String(value ?? '').trim()); }
+        function hideUpdateOverlay() { const overlay = document.getElementById('updateOverlay'); if (overlay) overlay.style.display = 'none'; }
         function showUpdateOverlay(cloudVersion) {
-            const badge = document.getElementById('versionInfoBadge');
-            const overlay = document.getElementById('updateOverlay');
+            const badge = document.getElementById('versionInfoBadge'); const overlay = document.getElementById('updateOverlay');
             if (!badge || !overlay) return;
-
-            badge.innerText = `Versi Anda: ${APP_VERSION} ➔ Pusat: ${cloudVersion}`;
-            overlay.style.display = 'flex';
+            badge.innerText = `Versi Anda: ${APP_VERSION} ➔ Pusat: ${cloudVersion}`; overlay.style.display = 'flex';
         }
 
-        // ------------------------------------------------------------------------
-        // VERSION CHECKER
-        // UPDATE HANYA jika versi pusat > versi lokal.
-        // Versi sama / lokal lebih tinggi = tidak ada popup.
-        // Listener Firebase hanya dipasang sekali.
-        // ------------------------------------------------------------------------
         let versionCheckStarted = false;
-
         function checkAppVersion() {
             if (versionCheckStarted) return;
             versionCheckStarted = true;
-
             db.ref(VERSION_CHECK_PATH).on('value', (snapshot) => {
                 const rawCloudVersion = snapshot.val();
                 const cloudVersion = String(rawCloudVersion ?? '').trim();
-
-                // Config kosong / invalid tidak boleh memicu update.
-                if (!cloudVersion || !isValidVersion(cloudVersion)) {
-                    hideUpdateOverlay();
-                    return;
-                }
-
-                const comparison = compareVersions(cloudVersion, APP_VERSION);
-
-                if (comparison > 0) {
-                    showUpdateOverlay(cloudVersion);
-                } else {
-                    // Cloud sama atau lebih rendah: JANGAN tampilkan popup.
-                    hideUpdateOverlay();
-                }
-            }, (error) => {
-                console.warn('[VersionChecker] Gagal membaca versi pusat:', error);
-                // Kegagalan jaringan tidak boleh mengganggu kasir dengan popup.
-                hideUpdateOverlay();
-            });
+                if (!cloudVersion || !isValidVersion(cloudVersion)) { hideUpdateOverlay(); return; }
+                if (compareVersions(cloudVersion, APP_VERSION) > 0) { showUpdateOverlay(cloudVersion); } 
+                else { hideUpdateOverlay(); }
+            }, (error) => { hideUpdateOverlay(); });
         }
 
-        // ------------------------------------------------------------------------
-        // SERVICE WORKER / CACHE CLEANUP
-        // File aplikasi ini tidak mendaftarkan SW baru. Jika ada SW lama dari
-        // deployment sebelumnya, lepaskan kontrolnya secara aman.
-        // ------------------------------------------------------------------------
         async function clearLegacyAppCache() {
             if (!('caches' in window)) return;
-
-            try {
-                const keys = await caches.keys();
-                await Promise.all(keys.map(key => caches.delete(key)));
-            } catch (error) {
-                console.warn('[CacheCleanup] Gagal membersihkan cache:', error);
-            }
+            try { const keys = await caches.keys(); await Promise.all(keys.map(key => caches.delete(key))); } catch (error) {}
         }
 
         async function unregisterLegacyServiceWorkers() {
-            // Service Worker hanya dapat dikelola pada secure context (HTTPS/localhost).
-            // Beberapa WebView/Android browser dapat melempar DOMException saat API ini
-            // dipanggil meskipun navigator.serviceWorker tersedia. Jangan ganggu POS.
             if (!('serviceWorker' in navigator) || !window.isSecureContext) return false;
-
             try {
                 const getRegistrations = navigator.serviceWorker.getRegistrations;
                 if (typeof getRegistrations !== 'function') return false;
-
                 const registrations = await getRegistrations.call(navigator.serviceWorker);
                 if (!Array.isArray(registrations) || registrations.length === 0) return true;
-
-                await Promise.allSettled(
-                    registrations.map(registration => {
-                        try {
-                            return registration.unregister();
-                        } catch (_) {
-                            return false;
-                        }
-                    })
-                );
+                await Promise.allSettled(registrations.map(registration => { try { return registration.unregister(); } catch (_) { return false; } }));
                 return true;
-            } catch (_) {
-                // DOMException dari browser/WebView tidak boleh membuat error console
-                // atau menghentikan proses boot/update POS.
-                return false;
-            }
+            } catch (_) { return false; }
         }
 
-        async function cleanupLegacyPwaStorage() {
-            await unregisterLegacyServiceWorkers();
-            await clearLegacyAppCache();
-        }
+        async function cleanupLegacyPwaStorage() { await unregisterLegacyServiceWorkers(); await clearLegacyAppCache(); }
 
-        // Bersihkan cache lama SATU KALI setiap versi aplikasi berubah.
-        // Ini penting untuk GitHub Pages/PWA agar build baru tidak tertahan cache lama.
         async function cleanupLegacyPwaStorageInBackground() {
             const CACHE_VERSION_KEY = 'pos_app_cache_version';
             try {
                 const cachedVersion = localStorage.getItem(CACHE_VERSION_KEY);
-
                 await unregisterLegacyServiceWorkers();
-
                 if (cachedVersion !== APP_VERSION) {
                     await clearLegacyAppCache();
                     localStorage.setItem(CACHE_VERSION_KEY, APP_VERSION);
-                    console.info('[CacheCleanup] Cache aplikasi dibersihkan untuk versi', APP_VERSION);
                 }
-            } catch (error) {
-                console.warn('[PWA Cleanup]', error);
-            }
+            } catch (error) {}
         }
 
-        // ------------------------------------------------------------------------
-        // HARD UPDATE
-        // Bersihkan SW/cache -> reload sekali dengan cache-busting query.
-        // Tidak menggunakan location.reload(true) karena parameter forceReload
-        // sudah obsolete dan tidak menjamin bypass HTTP cache.
-        // ------------------------------------------------------------------------
         async function hardRefreshApp() {
             const button = document.querySelector('#updateOverlay button');
-            if (button) {
-                button.disabled = true;
-                button.innerText = '⏳ MEMBERSIHKAN CACHE...';
-            }
-
+            if (button) { button.disabled = true; button.innerText = '⏳ MEMBERSIHKAN CACHE...'; }
             try {
                 sessionStorage.setItem(UPDATE_RELOAD_FLAG, '1');
                 await cleanupLegacyPwaStorage();
-
                 showToast('Mendownload update...', 'info');
-
                 const url = new URL(window.location.href);
                 url.searchParams.set('app_version', APP_VERSION);
                 url.searchParams.set('_refresh', String(Date.now()));
-
-                // replace() mencegah history bertambah setiap update.
                 window.location.replace(url.toString());
             } catch (error) {
-                console.error('[HardRefresh]', error);
                 sessionStorage.removeItem(UPDATE_RELOAD_FLAG);
-                if (button) {
-                    button.disabled = false;
-                    button.innerText = '🔄 REFRESH SEKARANG';
-                }
+                if (button) { button.disabled = false; button.innerText = '🔄 REFRESH SEKARANG'; }
                 showToast('Gagal membersihkan cache. Silakan refresh browser.', 'error');
             }
         }
 
-        // ============================================================================
-        // UTILITY: DEBOUNCE UNTUK SEARCH KETIK HP MEMO-LIGHT
-        // ============================================================================
         function debounce(func, wait = 200) {
-            let timeout;
-            return function(...args) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func.apply(this, args), wait);
-            };
+            let timeout; return function(...args) { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), wait); };
         }
 
-        // 0. TOAST & SOUND ALARM SYSTEM
         function showToast(message, type = 'success') {
-            const box = document.getElementById('toastBox');
-            const toast = document.createElement('div');
+            const box = document.getElementById('toastBox'); const toast = document.createElement('div');
             toast.className = `toast ${type}`;
-            
-            let icon = '✅';
-            if(type === 'error') icon = '❌';
-            if(type === 'info') icon = 'ℹ️';
-            if(type === 'warning') icon = '🚨';
-
+            let icon = '✅'; if(type === 'error') icon = '❌'; if(type === 'info') icon = 'ℹ️'; if(type === 'warning') icon = '🚨';
             toast.innerHTML = `<span class="toast-icon">${icon}</span> <span>${message}</span>`;
             box.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.style.animation = 'fadeOutToast 0.3s forwards';
-                setTimeout(() => toast.remove(), 300);
-            }, 3500);
+            setTimeout(() => { toast.style.animation = 'fadeOutToast 0.3s forwards'; setTimeout(() => toast.remove(), 300); }, 3500);
         }
 
         function playBuzzer() {
             try {
                 let ctx = new (window.AudioContext || window.webkitAudioContext)();
                 let beep = (time, freq) => {
-                    let osc = ctx.createOscillator();
-                    let gainNode = ctx.createGain();
-                    osc.connect(gainNode);
-                    gainNode.connect(ctx.destination);
-                    osc.type = 'square';
-                    osc.frequency.setValueAtTime(freq, time);
-                    gainNode.gain.setValueAtTime(0.1, time);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
-                    osc.start(time);
-                    osc.stop(time + 0.2);
+                    let osc = ctx.createOscillator(); let gainNode = ctx.createGain();
+                    osc.connect(gainNode); gainNode.connect(ctx.destination);
+                    osc.type = 'square'; osc.frequency.setValueAtTime(freq, time);
+                    gainNode.gain.setValueAtTime(0.1, time); gainNode.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+                    osc.start(time); osc.stop(time + 0.2);
                 };
-                beep(ctx.currentTime, 800);
-                beep(ctx.currentTime + 0.3, 1000);
+                beep(ctx.currentTime, 800); beep(ctx.currentTime + 0.3, 1000);
             } catch(e) {}
         }
 
-        // 1. FIREBASE CONFIGURATION
         const firebaseConfig = {
             apiKey: "AIzaSyB3AyBkSzRXLke8k89Z1aHr_CqihGGaabM",
             authDomain: "warmindo-dsamber-admin.firebaseapp.com",
@@ -830,416 +701,145 @@
             messagingSenderId: "197960198148",
             appId: "1:197960198148:web:8038fa922185937dce6d51"
         };
-        
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        firebase.initializeApp(firebaseConfig); const db = firebase.database();
+        try { db.setPersistenceEnabled(true); } catch (error) {}
 
-        // Firebase RTDB disk persistence:
-        // cache + antrean write tetap tersedia setelah reload/restart aplikasi.
-        // Jika WebView/browser tidak mengizinkan persistence, POS tetap berjalan
-        // dengan localStorage + cloud transaction sebagai fallback.
-        try {
-            db.setPersistenceEnabled(true);
-        } catch (error) {
-            console.warn('[FirebasePersistence] Tidak tersedia:', error);
-        }
-
-        // 2. TANGGAL STANDAR — SEMUA LOGIKA LAPORAN MENGGUNAKAN YYYY-MM-DD
-        // Jangan pernah fallback ke "hari ini" untuk data transaksi/pengeluaran.
-        // Jika tanggal data tidak valid/tidak diketahui, hasilnya null sehingga data
-        // tersebut TIDAK akan masuk ke laporan tanggal mana pun secara fiktif.
-
-        const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
-        const DATE_DMY_RE = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/;
-
-        function pad2(value) {
-            return String(value).padStart(2, '0');
-        }
-
-        function getTodayISO() {
-            const d = new Date();
-            return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-        }
-
+        const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/; const DATE_DMY_RE = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/;
+        function pad2(value) { return String(value).padStart(2, '0'); }
+        function getTodayISO() { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
         function isValidISODate(value) {
             if (typeof value !== 'string' || !DATE_RE.test(value)) return false;
-            const [, y, m, d] = value.match(DATE_RE);
-            const date = new Date(Number(y), Number(m) - 1, Number(d));
-            return date.getFullYear() === Number(y)
-                && date.getMonth() === Number(m) - 1
-                && date.getDate() === Number(d);
+            const [, y, m, d] = value.match(DATE_RE); const date = new Date(Number(y), Number(m) - 1, Number(d));
+            return date.getFullYear() === Number(y) && date.getMonth() === Number(m) - 1 && date.getDate() === Number(d);
         }
-
         function normalizeISODate(value) {
-            if (value instanceof Date && !isNaN(value.getTime())) {
-                return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
-            }
-
+            if (value instanceof Date && !isNaN(value.getTime())) return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
             if (typeof value !== 'string') return null;
-
-            const raw = value.trim();
-            if (!raw) return null;
-
-            // Format canonical aplikasi: YYYY-MM-DD.
+            const raw = value.trim(); if (!raw) return null;
             if (isValidISODate(raw)) return raw;
-
-            // Format Indonesia: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY.
             const dmy = raw.match(DATE_DMY_RE);
-            if (dmy) {
-                const [, d, m, y] = dmy;
-                const iso = `${y}-${pad2(m)}-${pad2(d)}`;
-                return isValidISODate(iso) ? iso : null;
-            }
-
-            // Timestamp ISO seperti 2026-09-29T03:15:00.000Z.
-            // Gunakan komponen tanggal lokal hanya jika timestamp memang eksplisit.
-            if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
-                const isoDate = raw.slice(0, 10);
-                return isValidISODate(isoDate) ? isoDate : null;            }
-
+            if (dmy) { const [, d, m, y] = dmy; const iso = `${y}-${pad2(m)}-${pad2(d)}`; return isValidISODate(iso) ? iso : null; }
+            if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) { const isoDate = raw.slice(0, 10); return isValidISODate(isoDate) ? isoDate : null; }
             return null;
         }
-
-        function parseToISO(dateStr) {
-            return normalizeISODate(dateStr);
-        }
-
+        function parseToISO(dateStr) { return normalizeISODate(dateStr); }
         function getDateFromTimestamp(value) {
             if (value === null || value === undefined || value === '') return null;
             let ms = null;
             if (typeof value === 'number' && Number.isFinite(value)) ms = value;
             else if (typeof value === 'string') {
                 const raw = value.trim();
-                if (/^\d+$/.test(raw)) {
-                    const numeric = Number(raw);
-                    if (Number.isFinite(numeric)) ms = numeric;
-                } else {
-                    const parsed = Date.parse(raw);
-                    if (!Number.isNaN(parsed)) ms = parsed;
-                }
+                if (/^\d+$/.test(raw)) { const numeric = Number(raw); if (Number.isFinite(numeric)) ms = numeric; } 
+                else { const parsed = Date.parse(raw); if (!Number.isNaN(parsed)) ms = parsed; }
             } else if (value instanceof Date) ms = value.getTime();
             if (ms === null || !Number.isFinite(ms)) return null;
-            const d = new Date(ms);
-            if (Number.isNaN(d.getTime())) return null;
+            const d = new Date(ms); if (Number.isNaN(d.getTime())) return null;
             return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
         }
-
         function getOrderDate(order) {
             if (!order || typeof order !== 'object') return null;
-            const explicitDate = normalizeISODate(order.date);
-            if (explicitDate) return explicitDate;
-            const timestampDate = getDateFromTimestamp(order.createdAt ?? order.timestamp ?? order.created_at);
-            if (timestampDate) return timestampDate;
-            if (typeof order.id === 'string' && /^ORD-[0-9A-Z]+$/i.test(order.id)) {
-                const timestamp = parseInt(order.id.slice(4), 36);
-                const date = getDateFromTimestamp(timestamp);
-                if (date) return date;
-            }
+            const explicitDate = normalizeISODate(order.date); if (explicitDate) return explicitDate;
+            const timestampDate = getDateFromTimestamp(order.createdAt ?? order.timestamp ?? order.created_at); if (timestampDate) return timestampDate;
+            if (typeof order.id === 'string' && /^ORD-[0-9A-Z]+$/i.test(order.id)) { const timestamp = parseInt(order.id.slice(4), 36); const date = getDateFromTimestamp(timestamp); if (date) return date; }
             if (typeof order.time === 'string') {
                 const match = order.time.trim().match(/^(\d{1,2})\s+([A-Za-zÀ-ÿ]+)(?:[\s,]+(\d{1,2}):\d{2})?/i);
                 if (match) {
                     const monthMap = {jan:0,januari:0,feb:1,februari:1,mar:2,maret:2,apr:3,april:3,mei:4,may:4,jun:5,juni:5,jul:6,juli:6,agu:7,agt:7,agustus:7,aug:7,sep:8,sept:8,september:8,okt:9,oct:9,oktober:9,nov:10,november:10,des:11,dec:11,desember:11};
-                    const key = match[2].toLowerCase();
-                    const month = monthMap[key] ?? monthMap[key.slice(0,3)];
-                    if (month !== undefined) {
-                        const iso = `${new Date().getFullYear()}-${pad2(month+1)}-${pad2(Number(match[1]))}`;
-                        if (isValidISODate(iso)) return iso;
-                    }
+                    const key = match[2].toLowerCase(); const month = monthMap[key] ?? monthMap[key.slice(0,3)];
+                    if (month !== undefined) { const iso = `${new Date().getFullYear()}-${pad2(month+1)}-${pad2(Number(match[1]))}`; if (isValidISODate(iso)) return iso; }
                 }
             }
             return null;
         }
-
         function getExpenseDate(expense) {
             if (!expense || typeof expense !== 'object') return null;
-
-            const explicitDate = normalizeISODate(expense.date);
-            if (explicitDate) return explicitDate;
-
-            // Legacy expense: ID Date.now() boleh digunakan karena memang dibuat
-            // sebagai timestamp milidetik oleh addExpense().
-            if (typeof expense.id === 'number' && Number.isFinite(expense.id)) {
-                return getDateFromTimestamp(expense.id);
-            }
-            if (typeof expense.id === 'string' && /^\d+$/.test(expense.id.trim())) {
-                return getDateFromTimestamp(expense.id.trim());
-            }
-
-            return getDateFromTimestamp(
-                expense.createdAt ??
-                expense.timestamp ??
-                expense.created_at
-            );
+            const explicitDate = normalizeISODate(expense.date); if (explicitDate) return explicitDate;
+            if (typeof expense.id === 'number' && Number.isFinite(expense.id)) return getDateFromTimestamp(expense.id);
+            if (typeof expense.id === 'string' && /^\d+$/.test(expense.id.trim())) return getDateFromTimestamp(expense.id.trim());
+            return getDateFromTimestamp(expense.createdAt ?? expense.timestamp ?? expense.created_at);
         }
+        function getSelectedDate() { const input = document.getElementById('revenueDate'); const selected = input ? normalizeISODate(input.value) : null; return selected || getTodayISO(); }
+        function isFutureDate(isoDate) { const normalized = normalizeISODate(isoDate); return normalized ? normalized > getTodayISO() : false; }
+        function getSafeAmount(value) { const amount = Number(value); return Number.isFinite(amount) && amount >= 0 ? amount : 0; }
+        function getReportOrders(targetDate) { if (!targetDate || isFutureDate(targetDate) || !Array.isArray(orders)) return []; return orders.filter(order => order && order.status === 'selesai' && getOrderDate(order) === targetDate); }
+        function getReportExpenses(targetDate) { if (!targetDate || isFutureDate(targetDate) || !Array.isArray(expenses)) return []; return expenses.filter(expense => expense && getExpenseDate(expense) === targetDate); }
+        function normalizePayment(value) { return String(value ?? '').trim().toLowerCase(); }
 
-        function getSelectedDate() {
-            const input = document.getElementById('revenueDate');
-            const selected = input ? normalizeISODate(input.value) : null;
-            return selected || getTodayISO();
-        }
-
-        function isFutureDate(isoDate) {
-            const normalized = normalizeISODate(isoDate);
-            return normalized ? normalized > getTodayISO() : false;
-        }
-
-        function getSafeAmount(value) {
-            const amount = Number(value);
-            return Number.isFinite(amount) && amount >= 0 ? amount : 0;
-        }
-
-        function getReportOrders(targetDate) {
-            if (!targetDate || isFutureDate(targetDate) || !Array.isArray(orders)) return [];
-
-            return orders.filter(order =>
-                order &&
-                order.status === 'selesai' &&
-                getOrderDate(order) === targetDate
-            );
-        }
-
-        function getReportExpenses(targetDate) {
-            if (!targetDate || isFutureDate(targetDate) || !Array.isArray(expenses)) return [];
-
-            return expenses.filter(expense =>
-                expense &&
-                getExpenseDate(expense) === targetDate
-            );
-        }
-
-        function normalizePayment(value) {
-            return String(value ?? '').trim().toLowerCase();
-        }
-
-        // Satu sumber perhitungan untuk kartu omzet, teks laporan, dan Excel.
-        // Mencegah angka UI dan laporan tertulis berbeda karena logika terpisah.
         function calculateDailyReport(targetDate) {
             const date = normalizeISODate(targetDate) || getTodayISO();
-            const result = {
-                date,
-                cash: 0,
-                qris: 0,
-                ojol: 0,
-                shopee: 0,
-                gofood: 0,
-                grab: 0,
-                shift1Cash: 0,
-                shift1Qris: 0,
-                shift2Cash: 0,
-                shift2Qris: 0,
-                expenses: 0,
-                orders: [],
-                expenseItems: []
-            };
-
+            const result = { date, cash: 0, qris: 0, ojol: 0, shopee: 0, gofood: 0, grab: 0, shift1Cash: 0, shift1Qris: 0, shift2Cash: 0, shift2Qris: 0, expenses: 0, orders: [], expenseItems: [] };
             if (isFutureDate(date)) return result;
-
-            result.orders = getReportOrders(date);
-            result.expenseItems = getReportExpenses(date);
+            result.orders = getReportOrders(date); result.expenseItems = getReportExpenses(date);
 
             result.orders.forEach(order => {
-                const amount = getSafeAmount(order.total);
-                const payment = normalizePayment(order.payment);
-
-                if (payment === 'cash') {
-                    result.cash += amount;
-                    if (String(order.shift) === '1') result.shift1Cash += amount;
-                    else if (String(order.shift) === '2') result.shift2Cash += amount;
-                } else if (payment === 'qris' || payment === 'tf' || payment === 'transfer') {
-                    result.qris += amount;
-                    if (String(order.shift) === '1') result.shift1Qris += amount;
-                    else if (String(order.shift) === '2') result.shift2Qris += amount;
-                } else if (payment === 'shopeefood' || payment === 'shopee food') {
-                    result.ojol += amount;
-                    result.shopee += amount;
-                } else if (payment === 'gofood' || payment === 'go food') {
-                    result.ojol += amount;
-                    result.gofood += amount;
-                } else if (payment === 'grabfood' || payment === 'grab food') {
-                    result.ojol += amount;
-                    result.grab += amount;
-                }
+                const amount = getSafeAmount(order.total); const payment = normalizePayment(order.payment);
+                if (payment === 'cash') { result.cash += amount; if (String(order.shift) === '1') result.shift1Cash += amount; else if (String(order.shift) === '2') result.shift2Cash += amount; } 
+                else if (payment === 'qris' || payment === 'tf' || payment === 'transfer') { result.qris += amount; if (String(order.shift) === '1') result.shift1Qris += amount; else if (String(order.shift) === '2') result.shift2Qris += amount; } 
+                else if (payment === 'shopeefood' || payment === 'shopee food') { result.ojol += amount; result.shopee += amount; } 
+                else if (payment === 'gofood' || payment === 'go food') { result.ojol += amount; result.gofood += amount; } 
+                else if (payment === 'grabfood' || payment === 'grab food') { result.ojol += amount; result.grab += amount; }
             });
-
-            result.expenses = result.expenseItems.reduce(
-                (sum, expense) => sum + getSafeAmount(expense.amount),
-                0
-            );
-
+            result.expenses = result.expenseItems.reduce((sum, expense) => sum + getSafeAmount(expense.amount), 0);
             result.total = result.cash + result.qris + result.ojol;
             result.totalCashWithPetty = result.cash + getSafeAmount(pettyCash);
             result.physicalCash = result.totalCashWithPetty - result.expenses;
-
             return result;
         }
 
-        // 3. STATE & DATA MANAGEMENT
-        function forceArray(data) {
-            if (!data) return [];
-            if (Array.isArray(data)) return data;
-            return Object.values(data);
+        function forceArray(data) { if (!data) return []; if (Array.isArray(data)) return data; return Object.values(data); }
+
+        let cart = []; let currentPosFilter = 'Semua'; let editingOrderId = null; let knownOrderIds = new Set(); let isInitialLoad = true;
+        window.currentHistoryFilter = 'selesai'; window.currentSubtotal = 0; window.currentDiscount = 0; window.currentFinalTotal = 0;
+
+        let defaultSettings = { storeName: "WARMINDO DSAMBER", footer: "Terimakasih sudah berkunjung!\nKritik dan saran kirim ke WhatsApp: 0813-8191-866 | Instagram: @warmindo_dsamber", logoBase64: "", shift1Name: "", shift2Name: "", activeShift: "1", manualOverride: false, portalPins: { expenses: "", inventory: "", staff: "", settings: "", sync: "" }, btAutoPrint: true, webhookUrl: "" };
+
+        function readLocalJSON(key, fallback) {
+            const primaryKey = 'pos_' + key; const backupKey = 'pos_backup_' + key;
+            try { const raw = localStorage.getItem(primaryKey); if (raw !== null) { const parsed = JSON.parse(raw); if (parsed !== null && parsed !== undefined) return parsed; } } catch (error) {}
+            try { const backupRaw = localStorage.getItem(backupKey); if (backupRaw !== null) { const backup = JSON.parse(backupRaw); if (backup !== null && backup !== undefined) { try { localStorage.setItem(primaryKey, JSON.stringify(backup)); } catch (_) {} return backup; } } } catch (error) {}
+            return fallback;
         }
 
-        let cart = []; 
-        let currentPosFilter = 'Semua';        let editingOrderId = null;
-        let knownOrderIds = new Set();
-        let isInitialLoad = true;
-        
-        window.currentHistoryFilter = 'selesai';
-        window.currentSubtotal = 0;
-        window.currentDiscount = 0;
-        window.currentFinalTotal = 0;
-
-        let defaultSettings = { 
-            storeName: "WARMINDO DSAMBER", 
-            footer: "Terimakasih sudah berkunjung!\nKritik dan saran kirim ke WhatsApp: 0813-8191-866 | Instagram: @warmindo_dsamber", 
-            logoBase64: "", 
-            shift1Name: "", 
-            shift2Name: "", 
-            activeShift: "1", 
-            manualOverride: false, 
-            portalPins: { expenses: "", inventory: "", staff: "", settings: "", sync: "" }, 
-            btAutoPrint: true,
-            webhookUrl: "" 
-        };
-
-        // Safe local storage reader.
-// localStorage yang rusak/tidak valid TIDAK boleh membuat seluruh JavaScript boot gagal.
-function readLocalJSON(key, fallback) {
-    const primaryKey = 'pos_' + key;
-    const backupKey = 'pos_backup_' + key;
-
-    try {
-        const raw = localStorage.getItem(primaryKey);
-        if (raw !== null) {
-            const parsed = JSON.parse(raw);
-            if (parsed !== null && parsed !== undefined) return parsed;
-        }
-    } catch (error) {
-        console.warn('[LocalStorage] Data utama rusak:', key, error);
-    }
-
-    try {
-        const backupRaw = localStorage.getItem(backupKey);
-        if (backupRaw !== null) {
-            const backup = JSON.parse(backupRaw);
-            if (backup !== null && backup !== undefined) {
-                console.warn('[LocalStorage] Memulihkan backup:', key);
-                try { localStorage.setItem(primaryKey, JSON.stringify(backup)); } catch (_) {}
-                return backup;
-            }
-        }
-    } catch (error) {
-        console.warn('[LocalStorage] Backup rusak:', key, error);
-    }
-
-    return fallback;
-}
-
-let orders = forceArray(readLocalJSON('orders', []));
-let expenses = forceArray(readLocalJSON('expenses', []));
-let pettyCash = Number(readLocalJSON('pettyCash', 0)) || 0;
-let staffList = readLocalJSON('staffList', { "Capster": [], "Kitchen": [], "Bar": [] });
-let products = forceArray(readLocalJSON('products', []));
-let settings = readLocalJSON('settings', defaultSettings);
+        let orders = forceArray(readLocalJSON('orders', []));
+        let expenses = forceArray(readLocalJSON('expenses', []));
+        let pettyCash = Number(readLocalJSON('pettyCash', 0)) || 0;
+        let staffList = readLocalJSON('staffList', { "Capster": [], "Kitchen": [], "Bar": [] });
+        let products = forceArray(readLocalJSON('products', []));
+        let settings = readLocalJSON('settings', defaultSettings);
 
         if (settings.storeName === "UNDERCORP POS" || settings.storeName === "UNDERCORP POS - Ultimate Persistent") {
-            settings.storeName = "WARMINDO DSAMBER";
-            settings.footer = "Terimakasih sudah berkunjung!\nKritik dan saran kirim ke WhatsApp: 0813-8191-866 | Instagram: @warmindo_dsamber";
+            settings.storeName = "WARMINDO DSAMBER"; settings.footer = "Terimakasih sudah berkunjung!\nKritik dan saran kirim ke WhatsApp: 0813-8191-866 | Instagram: @warmindo_dsamber";
             persistLocalData('settings', settings);
         }
 
         let printerKasirCharacteristic = null; let printerDapurCharacteristic = null;
+        function isPageActive(pageId) { let pageEl = document.getElementById('page-' + pageId); return pageEl && pageEl.classList.contains('active'); }
 
-        function isPageActive(pageId) {
-            let pageEl = document.getElementById('page-' + pageId);
-            return pageEl && pageEl.classList.contains('active');
-        }
+        const DATA_V2_PATH = 'pos_data_v2'; const ORDERS_V2_PATH = DATA_V2_PATH + '/orders'; const EXPENSES_V2_PATH = DATA_V2_PATH + '/expenses';
+        let ordersV2ListenerStarted = false; let expensesV2ListenerStarted = false; let dataMigrationStarted = false;
+        let lastSyncedOrderRevision = new Map(); let lastSyncedExpenseRevision = new Map();
 
-        // 4. SINKRONISASI CLOUD — PER-RECORD ARCHITECTURE
-        // Transaksi/pengeluaran disimpan satu record per ID.
-        // Legacy array tetap dibaca untuk migrasi/compatibility, tetapi tidak lagi
-        // digunakan sebagai sumber write utama. Ini mencegah whole-array overwrite.
-        const DATA_V2_PATH = 'pos_data_v2';
-        const ORDERS_V2_PATH = DATA_V2_PATH + '/orders';
-        const EXPENSES_V2_PATH = DATA_V2_PATH + '/expenses';
-
-        let ordersV2ListenerStarted = false;
-        let expensesV2ListenerStarted = false;
-        let dataMigrationStarted = false;
-        let lastSyncedOrderRevision = new Map();
-        let lastSyncedExpenseRevision = new Map();
-
-        function getRecordId(record, index) {
-            if (record && record.id !== undefined && record.id !== null && String(record.id) !== "") return String(record.id);
-            return "__record_index_" + index;
-        }
-
-        function getRecordRevision(record) {
-            if (!record || typeof record !== 'object') return 0;
-            return Number(record.updatedAt || record.createdAt || 0) || 0;
-        }
-
-        function encodeFirebaseKey(id) {
-            // Firebase child keys tidak boleh mengandung . # $ [ ] atau /.
-            return encodeURIComponent(String(id));
-        }
-
-        function decodeFirebaseRecord(record) {
-            if (!record || typeof record !== 'object') return record;
-            const copy = { ...record };
-            delete copy._deleted;
-            return copy;
-        }
-
-        function recordsFromV2(data) {
-            if (!data || typeof data !== 'object') return [];
-            return Object.values(data)                .filter(record => record && typeof record === 'object' && record._deleted !== true)
-                .map(decodeFirebaseRecord);
-        }
+        function getRecordId(record, index) { if (record && record.id !== undefined && record.id !== null && String(record.id) !== "") return String(record.id); return "__record_index_" + index; }
+        function getRecordRevision(record) { if (!record || typeof record !== 'object') return 0; return Number(record.updatedAt || record.createdAt || 0) || 0; }
+        function encodeFirebaseKey(id) { return encodeURIComponent(String(id)); }
+        function decodeFirebaseRecord(record) { if (!record || typeof record !== 'object') return record; const copy = { ...record }; delete copy._deleted; return copy; }
+        function recordsFromV2(data) { if (!data || typeof data !== 'object') return []; return Object.values(data).filter(record => record && typeof record === 'object' && record._deleted !== true).map(decodeFirebaseRecord); }
 
         function mergeCloudRecords(cloudData, localData) {
-            const cloud = forceArray(cloudData);
-            const local = forceArray(localData);
-            const merged = [];
-            const indexById = new Map();
-
-            cloud.forEach((record, index) => {
-                const copy = record && typeof record === 'object' ? { ...record } : record;
-                if (copy && copy._deleted === true) return;
-                const id = getRecordId(copy, index);
-                indexById.set(id, merged.length);
-                merged.push(copy);
-            });
-
+            const cloud = forceArray(cloudData); const local = forceArray(localData); const merged = []; const indexById = new Map();
+            cloud.forEach((record, index) => { const copy = record && typeof record === 'object' ? { ...record } : record; if (copy && copy._deleted === true) return; const id = getRecordId(copy, index); indexById.set(id, merged.length); merged.push(copy); });
             local.forEach((record, index) => {
-                const copy = record && typeof record === 'object' ? { ...record } : record;
-                const id = getRecordId(copy, index);
-                const existingIndex = indexById.get(id);
-
-                if (existingIndex === undefined) {
-                    indexById.set(id, merged.length);
-                    merged.push(copy);
-                    return;
-                }
-
-                const existing = merged[existingIndex];
-                const localRevision = getRecordRevision(copy);
-                const cloudRevision = getRecordRevision(existing);
-
+                const copy = record && typeof record === 'object' ? { ...record } : record; const id = getRecordId(copy, index); const existingIndex = indexById.get(id);
+                if (existingIndex === undefined) { indexById.set(id, merged.length); merged.push(copy); return; }
+                const existing = merged[existingIndex]; const localRevision = getRecordRevision(copy); const cloudRevision = getRecordRevision(existing);
                 if (localRevision >= cloudRevision) merged[existingIndex] = copy;
             });
-
             return merged;
         }
 
         function persistLocalData(key, dataObj) {
             try {
-                // Biarkan data utuh, JANGAN HAPUS FOTO DI SINI.
-                // Foto baru akan dihapus/dibersihkan di dalam fungsi syncToSheets() 
-                // HANYA setelah sukses terkirim ke Google Drive.
                 let localData = JSON.parse(JSON.stringify(dataObj));
-
                 const serialized = JSON.stringify(localData);
                 localStorage.setItem('pos_' + key, serialized);
                 localStorage.setItem('pos_backup_' + key, serialized);
@@ -1247,330 +847,113 @@ let settings = readLocalJSON('settings', defaultSettings);
                 console.error('[LocalPersistence] Gagal menyimpan:', key, e);
             }
         }
-        
-        function normalizeCloudRecord(record) {
-            if (!record || typeof record !== 'object') return null;
-            const copy = JSON.parse(JSON.stringify(record));
-            copy.id = String(copy.id ?? '');
-            if (!copy.id) return null;
-            if (!copy.updatedAt) copy.updatedAt = Number(copy.createdAt) || Date.now();
-            return copy;
-        }
+
+        function normalizeCloudRecord(record) { if (!record || typeof record !== 'object') return null; const copy = JSON.parse(JSON.stringify(record)); copy.id = String(copy.id ?? ''); if (!copy.id) return null; if (!copy.updatedAt) copy.updatedAt = Number(copy.createdAt) || Date.now(); return copy; }
 
         async function upsertRecordV2(collection, record, revisionMap) {
-            const normalized = normalizeCloudRecord(record);
-            if (!normalized) return false;
-
-            const id = String(normalized.id);
-            const revision = getRecordRevision(normalized);
-            const knownRevision = revisionMap.get(id) || 0;
-
-            // Jangan menulis ulang record yang sudah diketahui tersinkron.
+            const normalized = normalizeCloudRecord(record); if (!normalized) return false;
+            const id = String(normalized.id); const revision = getRecordRevision(normalized); const knownRevision = revisionMap.get(id) || 0;
             if (revision <= knownRevision) return true;
-
             const path = collection === 'orders' ? ORDERS_V2_PATH : EXPENSES_V2_PATH;
             const ref = db.ref(path + '/' + encodeFirebaseKey(id));
-
             try {
                 const result = await ref.transaction(current => {
-                    if (!current || typeof current !== 'object') {
-                        return { ...normalized, _deleted: false };
-                    }
-
+                    if (!current || typeof current !== 'object') return { ...normalized, _deleted: false };
                     const currentRevision = getRecordRevision(current);
-                    if (current._deleted === true && currentRevision >= revision) {
-                        return current;
-                    }
-
+                    if (current._deleted === true && currentRevision >= revision) return current;
                     if (currentRevision > revision) return current;
                     return { ...normalized, _deleted: false };
                 });
-
                 if (result.committed) {
-                    const saved = result.snapshot.val();
-                    const savedRevision = getRecordRevision(saved);
-                    revisionMap.set(id, savedRevision);
+                    const saved = result.snapshot.val(); const savedRevision = getRecordRevision(saved); revisionMap.set(id, savedRevision);
                     return saved && saved._deleted !== true;
                 }
-            } catch (error) {
-                console.error('[V2 Sync] Gagal menyimpan record:', collection, id, error);
-                showToast('⚠️ Data tersimpan lokal, sinkronisasi Cloud tertunda.', 'warning');
-            }
+            } catch (error) {}
             return false;
         }
 
         async function syncCollectionV2(collection, dataObj) {
-            const records = forceArray(dataObj);
-            const revisionMap = collection === 'orders'
-                ? lastSyncedOrderRevision
-                : lastSyncedExpenseRevision;
-
-            // Batasi concurrency supaya HP kasir tidak dibebani ratusan transaction
-            // sekaligus saat migrasi/boot.
-            const pending = records
-                .map(normalizeCloudRecord)
-                .filter(Boolean)
-                .filter(record => getRecordRevision(record) > (revisionMap.get(String(record.id)) || 0));
-
-            for (let i = 0; i < pending.length; i += 10) {
-                const batch = pending.slice(i, i + 10);
-                await Promise.all(batch.map(record =>
-                    upsertRecordV2(collection, record, revisionMap)
-                ));
-            }
+            const records = forceArray(dataObj); const revisionMap = collection === 'orders' ? lastSyncedOrderRevision : lastSyncedExpenseRevision;
+            const pending = records.map(normalizeCloudRecord).filter(Boolean).filter(record => getRecordRevision(record) > (revisionMap.get(String(record.id)) || 0));
+            for (let i = 0; i < pending.length; i += 10) { const batch = pending.slice(i, i + 10); await Promise.all(batch.map(record => upsertRecordV2(collection, record, revisionMap))); }
         }
 
         async function migrateLegacyCollection(collection, legacyData) {
-            const records = forceArray(legacyData)
-                .map(normalizeCloudRecord)
-                .filter(Boolean);
-
-            if (!records.length) return;
-
-            const revisionMap = collection === 'orders'
-                ? lastSyncedOrderRevision
-                : lastSyncedExpenseRevision;
-
-            for (let i = 0; i < records.length; i += 10) {
-                const batch = records.slice(i, i + 10);
-                await Promise.all(batch.map(record =>
-                    upsertRecordV2(collection, record, revisionMap)
-                ));
-            }
+            const records = forceArray(legacyData).map(normalizeCloudRecord).filter(Boolean); if (!records.length) return;
+            const revisionMap = collection === 'orders' ? lastSyncedOrderRevision : lastSyncedExpenseRevision;
+            for (let i = 0; i < records.length; i += 10) { const batch = records.slice(i, i + 10); await Promise.all(batch.map(record => upsertRecordV2(collection, record, revisionMap))); }
         }
 
         async function migrateLegacyDataOnce() {
-            if (dataMigrationStarted) return;
-            dataMigrationStarted = true;
-
+            if (dataMigrationStarted) return; dataMigrationStarted = true;
             try {
-                const [ordersSnap, expensesSnap] = await Promise.all([
-                    db.ref('pos_data/orders').once('value'),
-                    db.ref('pos_data/expenses').once('value')
-                ]);
-
-                await Promise.all([
-                    migrateLegacyCollection('orders', ordersSnap.val()),
-                    migrateLegacyCollection('expenses', expensesSnap.val())
-                ]);
-
-                console.info('[V2 Migration] Legacy orders/expenses berhasil diperiksa dan dimigrasikan.');
-            } catch (error) {
-                console.error('[V2 Migration] Gagal:', error);
-                // Jangan hapus/replace data lokal. Listener V2 tetap mencoba cache/cloud.
-            }
+                const [ordersSnap, expensesSnap] = await Promise.all([ db.ref('pos_data/orders').once('value'), db.ref('pos_data/expenses').once('value') ]);
+                await Promise.all([ migrateLegacyCollection('orders', ordersSnap.val()), migrateLegacyCollection('expenses', expensesSnap.val()) ]);
+            } catch (error) {}
         }
 
         function applyV2Orders(data) {
-            const cloud = data && typeof data === 'object' ? data : {};
-            const deletedIds = new Set();
-
-            Object.values(cloud).forEach(record => {
-                if (record && record._deleted === true && record.id !== undefined) {
-                    const id = String(record.id);
-                    deletedIds.add(id);
-                    lastSyncedOrderRevision.set(id, getRecordRevision(record));
-                }
-            });
-
-            if (deletedIds.size > 0) {
-                orders = orders.filter(record => !deletedIds.has(String(record.id)));
-            }
-
-            const cloudOrders = recordsFromV2(cloud);
-            orders = mergeCloudRecords(cloudOrders, orders);
-
-            // Hanya record yang benar-benar terlihat dari Cloud yang dianggap synced.
-            // Record yang hanya ada di local tetap akan dikirim ke V2.
-            Object.values(cloud).forEach(record => {
-                if (record && typeof record === 'object' && record.id !== undefined) {
-                    lastSyncedOrderRevision.set(String(record.id), getRecordRevision(record));
-                }
-            });
-
+            const cloud = data && typeof data === 'object' ? data : {}; const deletedIds = new Set();
+            Object.values(cloud).forEach(record => { if (record && record._deleted === true && record.id !== undefined) { const id = String(record.id); deletedIds.add(id); lastSyncedOrderRevision.set(id, getRecordRevision(record)); } });
+            if (deletedIds.size > 0) orders = orders.filter(record => !deletedIds.has(String(record.id)));
+            const cloudOrders = recordsFromV2(cloud); orders = mergeCloudRecords(cloudOrders, orders);
+            Object.values(cloud).forEach(record => { if (record && typeof record === 'object' && record.id !== undefined) lastSyncedOrderRevision.set(String(record.id), getRecordRevision(record)); });
             persistLocalData('orders', orders);
-
-            // Local-first recovery: jika ada transaksi yang belum pernah ada di V2,
-            // dorong kembali ke Cloud tanpa menunggu transaksi baru.
-            if (!isInitialLoad && orders.length) {
-                syncCollectionV2('orders', orders).catch(error =>
-                    console.error('[V2 Local Recovery Orders]', error)
-                );
-            }
-
-            if (isPageActive('pos')) renderPOS(currentPosFilter);
-            else if (isPageActive('revenue')) renderRevenue();
-            else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
+            if (!isInitialLoad && orders.length) syncCollectionV2('orders', orders).catch(error => {});
+            if (isPageActive('pos')) renderPOS(currentPosFilter); else if (isPageActive('revenue')) renderRevenue(); else if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
         }
 
         function applyV2Expenses(data) {
-            const cloud = data && typeof data === 'object' ? data : {};
-            const deletedIds = new Set();
-
-            Object.values(cloud).forEach(record => {
-                if (record && record._deleted === true && record.id !== undefined) {
-                    const id = String(record.id);
-                    deletedIds.add(id);
-                    lastSyncedExpenseRevision.set(id, getRecordRevision(record));
-                }
-            });
-
-            if (deletedIds.size > 0) {
-                expenses = expenses.filter(record => !deletedIds.has(String(record.id)));
-            }
-
-            const cloudExpenses = recordsFromV2(cloud);
-            expenses = mergeCloudRecords(cloudExpenses, expenses);
-
-            Object.values(cloud).forEach(record => {
-                if (record && typeof record === 'object' && record.id !== undefined) {
-                    lastSyncedExpenseRevision.set(String(record.id), getRecordRevision(record));
-                }
-            });
-
+            const cloud = data && typeof data === 'object' ? data : {}; const deletedIds = new Set();
+            Object.values(cloud).forEach(record => { if (record && record._deleted === true && record.id !== undefined) { const id = String(record.id); deletedIds.add(id); lastSyncedExpenseRevision.set(id, getRecordRevision(record)); } });
+            if (deletedIds.size > 0) expenses = expenses.filter(record => !deletedIds.has(String(record.id)));
+            const cloudExpenses = recordsFromV2(cloud); expenses = mergeCloudRecords(cloudExpenses, expenses);
+            Object.values(cloud).forEach(record => { if (record && typeof record === 'object' && record.id !== undefined) lastSyncedExpenseRevision.set(String(record.id), getRecordRevision(record)); });
             persistLocalData('expenses', expenses);
-
-            if (!isInitialLoad && expenses.length) {
-                syncCollectionV2('expenses', expenses).catch(error =>
-                    console.error('[V2 Local Recovery Expenses]', error)
-                );
-            }
-
-            if (isPageActive('expenses')) renderExpenses();
-            if (isPageActive('revenue')) renderRevenue();
+            if (!isInitialLoad && expenses.length) syncCollectionV2('expenses', expenses).catch(error => {});
+            if (isPageActive('expenses')) renderExpenses(); if (isPageActive('revenue')) renderRevenue();
         }
 
         function startV2Listeners() {
             if (!ordersV2ListenerStarted) {
                 ordersV2ListenerStarted = true;
-                db.ref(ORDERS_V2_PATH).on('value', snapshot => {
-                    applyV2Orders(snapshot.val());
-                    knownOrderIds.clear();
-                    orders.forEach(o => knownOrderIds.add(o.id));
-                    isInitialLoad = false;
-                    document.getElementById('syncDataStatus').innerText = '✅ Synced';
-                }, error => {
-                    console.error('[V2 Orders Listener]', error);
-                    document.getElementById('syncDataStatus').innerText = '⚠️ Local';
-                    showToast('Cloud transaksi bermasalah — data lokal tetap dipertahankan.', 'warning');
-                    isInitialLoad = false;
-                });
+                db.ref(ORDERS_V2_PATH).on('value', snapshot => { applyV2Orders(snapshot.val()); knownOrderIds.clear(); orders.forEach(o => knownOrderIds.add(o.id)); isInitialLoad = false; document.getElementById('syncDataStatus').innerText = '✅ Synced'; }, error => { document.getElementById('syncDataStatus').innerText = '⚠️ Local'; isInitialLoad = false; });
             }
-
-            if (!expensesV2ListenerStarted) {
-                expensesV2ListenerStarted = true;
-                db.ref(EXPENSES_V2_PATH).on('value', snapshot => {
-                    applyV2Expenses(snapshot.val());
-                }, error => {
-                    console.error('[V2 Expenses Listener]', error);
-                });
-            }
+            if (!expensesV2ListenerStarted) { expensesV2ListenerStarted = true; db.ref(EXPENSES_V2_PATH).on('value', snapshot => { applyV2Expenses(snapshot.val()); }, error => {}); }
         }
 
         function syncToCloud(key, dataObj) {
-            // Local-first: persist sebelum network operation.
             persistLocalData(key, dataObj);
-
-            if (key === 'orders' || key === 'expenses') {
-                if (isInitialLoad) return;
-
-                // Per-record transaction. Tidak pernah .set(array) ke seluruh collection.
-                syncCollectionV2(key, dataObj).catch(error => {
-                    console.error('[V2 Sync Collection]', key, error);
-                });
-                return;
-            }
-
-            // Configuration/scalar data bukan transaksi. Tetap gunakan path terpisah.
-            setTimeout(() => {
-                db.ref('pos_data/' + key).set(dataObj).catch(err => {
-                    console.error('Cloud write error:', err);
-                    showToast('Data tersimpan lokal, Cloud tertunda.', 'warning');
-                });
-            }, 50);
+            if (key === 'orders' || key === 'expenses') { if (isInitialLoad) return; syncCollectionV2(key, dataObj).catch(error => {}); return; }
+            setTimeout(() => { db.ref('pos_data/' + key).set(dataObj).catch(err => { showToast('Data tersimpan lokal, Cloud tertunda.', 'warning'); }); }, 50);
         }
 
         async function deleteRecordFromCloud(key, id) {
-            const targetId = String(id);
-            const collection = key === 'orders' ? ORDERS_V2_PATH : EXPENSES_V2_PATH;
-            const revision = Date.now();            const ref = db.ref(collection + '/' + encodeFirebaseKey(targetId));
-
+            const targetId = String(id); const collection = key === 'orders' ? ORDERS_V2_PATH : EXPENSES_V2_PATH; const revision = Date.now(); const ref = db.ref(collection + '/' + encodeFirebaseKey(targetId));
             try {
-                // Tombstone, bukan remove(): device lama yang masih memiliki record
-                // tidak dapat menghidupkannya kembali jika revisinya lebih tua.
-                const result = await ref.transaction(current => {
-                    const currentRevision = getRecordRevision(current);
-                    if (current && currentRevision > revision) return current;
-                    return {
-                        id: targetId,
-                        updatedAt: revision,
-                        createdAt: current && current.createdAt ? current.createdAt : revision,
-                        _deleted: true
-                    };
-                });
-
+                const result = await ref.transaction(current => { const currentRevision = getRecordRevision(current); if (current && currentRevision > revision) return current; return { id: targetId, updatedAt: revision, createdAt: current && current.createdAt ? current.createdAt : revision, _deleted: true }; });
                 if (!result.committed) throw new Error('Delete transaction tidak committed');
-
-                if (key === 'orders') {
-                    orders = orders.filter(record => String(record.id) !== targetId);
-                    lastSyncedOrderRevision.set(targetId, revision);
-                    persistLocalData('orders', orders);
-                } else if (key === 'expenses') {
-                    expenses = expenses.filter(record => String(record.id) !== targetId);
-                    lastSyncedExpenseRevision.set(targetId, revision);
-                    persistLocalData('expenses', expenses);
-                }
-
+                if (key === 'orders') { orders = orders.filter(record => String(record.id) !== targetId); lastSyncedOrderRevision.set(targetId, revision); persistLocalData('orders', orders); } 
+                else if (key === 'expenses') { expenses = expenses.filter(record => String(record.id) !== targetId); lastSyncedExpenseRevision.set(targetId, revision); persistLocalData('expenses', expenses); }
                 return forceArray(result.snapshot.val());
-            } catch (error) {
-                console.error('[V2 Delete]', key, targetId, error);
-                throw error;
-            }
+            } catch (error) { throw error; }
         }
 
         function fetchPosDataFromFirebase() {
             document.getElementById('syncDataStatus').innerText = '🔄 Syncing...';
-
-            // Listener V2 hanya dibuat satu kali.
-            startV2Listeners();
-
-            // Migrasi legacy berjalan di background dan tidak menghapus local state.
-            migrateLegacyDataOnce().catch(error => console.error('[V2 Migration]', error));
-
-            // Load non-transaction config/scalars dari legacy path.
+            startV2Listeners(); migrateLegacyDataOnce().catch(error => {});
             db.ref('pos_data').once('value').then(snapshot => {
                 const data = snapshot.val() || {};
-
-                if (data.pettyCash !== undefined) {
-                    pettyCash = Number(data.pettyCash) || 0;
-                    persistLocalData('pettyCash', pettyCash);
-                }
-                if (data.staffList) {
-                    staffList = data.staffList;
-                    persistLocalData('staffList', staffList);
-                }
-                if (data.settings) {
-                    settings = { ...defaultSettings, ...data.settings };
-                    persistLocalData('settings', settings);
-                }
-
-                updateSidebarCashier();
-                if (isPageActive('pos')) renderPOS(currentPosFilter);
-            }).catch(error => {
-                console.warn('[Config Sync] Cloud config gagal:', error);
-                isInitialLoad = false;
-            });
+                if (data.pettyCash !== undefined) { pettyCash = Number(data.pettyCash) || 0; persistLocalData('pettyCash', pettyCash); }
+                if (data.staffList) { staffList = data.staffList; persistLocalData('staffList', staffList); }
+                if (data.settings) { settings = { ...defaultSettings, ...data.settings }; persistLocalData('settings', settings); }
+                updateSidebarCashier(); if (isPageActive('pos')) renderPOS(currentPosFilter);
+            }).catch(error => { isInitialLoad = false; });
         }
 
         function forceReloadFromCloud() {
             if (!confirm('Periksa ulang data Cloud dan gabungkan dengan data lokal?\\n\\nData lokal TIDAK akan dihapus.')) return;
-
-            isInitialLoad = true;
-            migrateLegacyDataOnce().finally(() => {
-                startV2Listeners();
-                isInitialLoad = false;
-            });
-            showToast('Memeriksa ulang Cloud tanpa menghapus data lokal...', 'info');
+            isInitialLoad = true; migrateLegacyDataOnce().finally(() => { startV2Listeners(); isInitialLoad = false; }); showToast('Memeriksa ulang Cloud tanpa menghapus data lokal...', 'info');
         }
 
         function formatRp(angka) { return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka); }
@@ -1584,36 +967,23 @@ let settings = readLocalJSON('settings', defaultSettings);
         }
 
         function switchPage(pageId) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active')); document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             document.getElementById('page-' + pageId).classList.add('active');
             let btn = document.querySelector(`button[onclick="attemptPage('${pageId}')"]`); if(btn) btn.classList.add('active');
-            
-            if(pageId === 'pos') renderPOS(currentPosFilter);
-            if(pageId === 'revenue') renderRevenue(); 
-            if(pageId === 'expenses') renderExpenses();
-            if(pageId === 'inventory') renderInventory(); 
-            if(pageId === 'history') filterHistory(window.currentHistoryFilter);
-            if(pageId === 'staff') { loadStaffSettings(); renderStaffList(); }
-            if(pageId === 'settings') loadStoreSettings();
-            if(pageId === 'admin') loadAdminPins();
+            if(pageId === 'pos') renderPOS(currentPosFilter); if(pageId === 'revenue') renderRevenue(); if(pageId === 'expenses') renderExpenses();
+            if(pageId === 'inventory') renderInventory(); if(pageId === 'history') filterHistory(window.currentHistoryFilter);
+            if(pageId === 'staff') { loadStaffSettings(); renderStaffList(); } if(pageId === 'settings') loadStoreSettings(); if(pageId === 'admin') loadAdminPins();
         }
 
         function loadAdminPins() {
             if(settings.portalPins) {
-                document.getElementById('pin-expenses').value = settings.portalPins.expenses || "";
-                document.getElementById('pin-inventory').value = settings.portalPins.inventory || "";
-                document.getElementById('pin-staff').value = settings.portalPins.staff || "";
-                document.getElementById('pin-settings').value = settings.portalPins.settings || "";
-                document.getElementById('pin-sync').value = settings.portalPins.sync || ""; 
+                document.getElementById('pin-expenses').value = settings.portalPins.expenses || ""; document.getElementById('pin-inventory').value = settings.portalPins.inventory || "";
+                document.getElementById('pin-staff').value = settings.portalPins.staff || ""; document.getElementById('pin-settings').value = settings.portalPins.settings || ""; document.getElementById('pin-sync').value = settings.portalPins.sync || ""; 
             }
         }
         function saveAdminPins() {
-            settings.portalPins.expenses = document.getElementById('pin-expenses').value;
-            settings.portalPins.inventory = document.getElementById('pin-inventory').value;
-            settings.portalPins.staff = document.getElementById('pin-staff').value;
-            settings.portalPins.settings = document.getElementById('pin-settings').value;
-            settings.portalPins.sync = document.getElementById('pin-sync').value; 
+            settings.portalPins.expenses = document.getElementById('pin-expenses').value; settings.portalPins.inventory = document.getElementById('pin-inventory').value;
+            settings.portalPins.staff = document.getElementById('pin-staff').value; settings.portalPins.settings = document.getElementById('pin-settings').value; settings.portalPins.sync = document.getElementById('pin-sync').value; 
             syncToCloud('settings', settings); showToast("Sandi Portal disimpan", "success"); attemptPage('pos'); 
         }
 
@@ -1636,22 +1006,13 @@ let settings = readLocalJSON('settings', defaultSettings);
             else { settings.manualOverride = true; settings.activeShift = val; updateSidebarCashier(); showToast(`Shift ${val} diaktifkan`, "warning");}
             syncToCloud('settings', settings);
         }
-        function saveShiftSettings() {
-            settings.shift1Name = document.getElementById('shift1Name').value; settings.shift2Name = document.getElementById('shift2Name').value;
-            syncToCloud('settings', settings); updateSidebarCashier(); showToast("Shift disimpan", "success");
-        }
-        function loadStaffSettings() {
-            document.getElementById('shift1Name').value = settings.shift1Name || ""; document.getElementById('shift2Name').value = settings.shift2Name || "";
-            document.getElementById('activeShiftSelect').value = settings.manualOverride ? settings.activeShift : "auto";
-        }
+        function saveShiftSettings() { settings.shift1Name = document.getElementById('shift1Name').value; settings.shift2Name = document.getElementById('shift2Name').value; syncToCloud('settings', settings); updateSidebarCashier(); showToast("Shift disimpan", "success"); }
+        function loadStaffSettings() { document.getElementById('shift1Name').value = settings.shift1Name || ""; document.getElementById('shift2Name').value = settings.shift2Name || ""; document.getElementById('activeShiftSelect').value = settings.manualOverride ? settings.activeShift : "auto"; }
 
         function renderStaffList() {
             let tbody = document.getElementById('staffTableBody'); let trHtml = '';
-            for (let role in staffList) {
-                if(staffList[role]) staffList[role].forEach(name => { trHtml += `<tr><td style="font-weight:700;">${name}</td><td>${role}</td><td><button class="btn btn-outline" style="padding:4px; font-size:11px;" onclick="deleteStaff('${role}', '${name}')">Hapus</button></td></tr>`; });
-            }
-            tbody.innerHTML = trHtml || `<tr><td colspan="3" style="text-align:center;">Kosong.</td></tr>`;
-            updateCartUI(); 
+            for (let role in staffList) { if(staffList[role]) staffList[role].forEach(name => { trHtml += `<tr><td style="font-weight:700;">${name}</td><td>${role}</td><td><button class="btn btn-outline" style="padding:4px; font-size:11px;" onclick="deleteStaff('${role}', '${name}')">Hapus</button></td></tr>`; }); }
+            tbody.innerHTML = trHtml || `<tr><td colspan="3" style="text-align:center;">Kosong.</td></tr>`; updateCartUI(); 
         }
         function addStaff() {
             let name = document.getElementById('newStaffName').value, role = document.getElementById('newStaffRole').value;
@@ -1660,41 +1021,23 @@ let settings = readLocalJSON('settings', defaultSettings);
             if(staffList[role].includes(name)) { showToast("Sudah ada", "error"); return; }
             staffList[role].push(name); document.getElementById('newStaffName').value = ""; syncToCloud('staffList', staffList); renderStaffList(); showToast(`Karyawan ditambahkan`, "success");
         }
-        function deleteStaff(role, name) { 
-            if(confirm(`Hapus ${name}?`)) { staffList[role] = staffList[role].filter(n => n !== name); syncToCloud('staffList', staffList); renderStaffList(); showToast(`Karyawan dihapus`, "success"); }
-        }
+        function deleteStaff(role, name) { if(confirm(`Hapus ${name}?`)) { staffList[role] = staffList[role].filter(n => n !== name); syncToCloud('staffList', staffList); renderStaffList(); showToast(`Karyawan dihapus`, "success"); } }
 
         function fetchProductsFromFirebase() {
             document.getElementById('syncMenuStatus').innerText = "🔄 Syncing...";
             db.ref('menus').on('value', (snapshot) => {
                 let fbProducts = []; const data = snapshot.val();
-                if(data) {
-                    for(let id in data) {
-                        let menu = data[id];
-                        if (!menu.dihapus) fbProducts.push({ id: id, name: menu.nama, price: menu.harga, category: menu.kategori ? (menu.kategori.charAt(0).toUpperCase() + menu.kategori.slice(1)) : 'Lainnya', reqStaff: menu.reqStaff || 'Kitchen', tersedia: menu.tersedia });
-                    }
-                }
-                products = fbProducts;
-                localStorage.setItem('pos_products', JSON.stringify(products)); 
-                document.getElementById('syncMenuStatus').innerText = "✅ Synced"; 
-                if (isPageActive('inventory')) renderInventory(); 
-                if (isPageActive('pos')) { renderCategories(); renderPOS(currentPosFilter); }
+                if(data) { for(let id in data) { let menu = data[id]; if (!menu.dihapus) fbProducts.push({ id: id, name: menu.nama, price: menu.harga, category: menu.kategori ? (menu.kategori.charAt(0).toUpperCase() + menu.kategori.slice(1)) : 'Lainnya', reqStaff: menu.reqStaff || 'Kitchen', tersedia: menu.tersedia }); } }
+                products = fbProducts; localStorage.setItem('pos_products', JSON.stringify(products)); document.getElementById('syncMenuStatus').innerText = "✅ Synced"; 
+                if (isPageActive('inventory')) renderInventory(); if (isPageActive('pos')) { renderCategories(); renderPOS(currentPosFilter); }
             }, (error) => { showToast("Gagal menarik Menu", "error"); });
         }
 
         function renderInventory() {
-            let tbody = document.getElementById('inventoryTableBody');
-            let kw = document.getElementById('searchInventory') ? document.getElementById('searchInventory').value.toLowerCase() : "";
-            let fp = kw ? products.filter(p => p.name.toLowerCase().includes(kw)) : products;
-            
-            let trHtml = '';
+            let tbody = document.getElementById('inventoryTableBody'); let kw = document.getElementById('searchInventory') ? document.getElementById('searchInventory').value.toLowerCase() : "";
+            let fp = kw ? products.filter(p => p.name.toLowerCase().includes(kw)) : products; let trHtml = '';
             if (fp.length === 0) { trHtml = `<tr><td colspan="5" style="text-align:center;">Tidak ada menu.</td></tr>`; } 
-            else {
-                fp.forEach(p => {
-                    let statusBadge = p.tersedia !== false ? '<span style="color:var(--success); font-weight:800;">Tersedia</span>' : '<span style="color:var(--danger); font-weight:800;">Habis</span>';
-                    trHtml += `<tr><td style="font-weight: 800;">${p.name}</td><td>${p.category}</td><td style="color: var(--primary);">${formatRp(p.price)}</td><td>${statusBadge}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="editProduct('${p.id}')">Edit</button> <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteProduct('${p.id}')">Hapus</button></td></tr>`;
-                });
-            }
+            else { fp.forEach(p => { let statusBadge = p.tersedia !== false ? '<span style="color:var(--success); font-weight:800;">Tersedia</span>' : '<span style="color:var(--danger); font-weight:800;">Habis</span>'; trHtml += `<tr><td style="font-weight: 800;">${p.name}</td><td>${p.category}</td><td style="color: var(--primary);">${formatRp(p.price)}</td><td>${statusBadge}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="editProduct('${p.id}')">Edit</button> <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteProduct('${p.id}')">Hapus</button></td></tr>`; }); }
             tbody.innerHTML = trHtml;
         }
 
@@ -1705,154 +1048,76 @@ let settings = readLocalJSON('settings', defaultSettings);
             if(!name || isNaN(price)) { showToast("Isi form dengan lengkap", "error"); return; }
             let data = { nama: name, kategori: cat.toLowerCase(), harga: price, reqStaff: staff, tersedia: status };
             try {
-                if(id) { await db.ref('menus/' + id).update(data); showToast("Menu diperbarui", "success"); } 
-                else { data.dihapus = false; await db.ref('menus').push(data); showToast("Menu ditambahkan", "success"); }
+                if(id) { await db.ref('menus/' + id).update(data); showToast("Menu diperbarui", "success"); } else { data.dihapus = false; await db.ref('menus').push(data); showToast("Menu ditambahkan", "success"); }
                 document.getElementById('invId').value=""; document.getElementById('invName').value=""; document.getElementById('invPrice').value=""; document.getElementById('invStatus').value="true";
             } catch (e) { showToast("Gagal menyimpan ke Firebase", "error"); }
         }
-        function editProduct(id) {
-            let p = products.find(x => x.id === id);
-            if(p) { document.getElementById('invId').value = p.id; document.getElementById('invName').value = p.name; document.getElementById('invCategory').value = p.category; document.getElementById('invPrice').value = p.price; document.getElementById('invStaff').value = p.reqStaff; document.getElementById('invStatus').value = p.tersedia !== false ? "true" : "false"; showToast(`Mengedit: ${p.name}`, "info"); }
-        }
+        function editProduct(id) { let p = products.find(x => x.id === id); if(p) { document.getElementById('invId').value = p.id; document.getElementById('invName').value = p.name; document.getElementById('invCategory').value = p.category; document.getElementById('invPrice').value = p.price; document.getElementById('invStaff').value = p.reqStaff; document.getElementById('invStatus').value = p.tersedia !== false ? "true" : "false"; showToast(`Mengedit: ${p.name}`, "info"); } }
         async function deleteProduct(id) { if(confirm("Hapus menu ini?")) { try { await db.ref('menus/' + id).update({dihapus: true, tersedia: false}); showToast("Menu dihapus", "success"); } catch(e) { showToast("Gagal hapus", "error"); } } }
 
         function savePettyCash() { pettyCash = parseInt(document.getElementById('inputPettyCash').value) || 0; syncToCloud('pettyCash', pettyCash); document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash); renderRevenue(); showToast("Modal Awal diperbarui", "success"); }
         
         function handleExpensePhoto(input) {
             if (input.files && input.files[0]) {
-                const file = input.files[0];
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
+                const file = input.files[0]; const reader = new FileReader(); reader.readAsDataURL(file);
                 reader.onload = event => {
-                    const img = new Image();
-                    img.src = event.target.result;
+                    const img = new Image(); img.src = event.target.result;
                     img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        let MAX_WIDTH = 600; 
-                        let scaleSize = MAX_WIDTH / img.width;
-                        if(scaleSize > 1) scaleSize = 1; 
-                        
-                        canvas.width = img.width * scaleSize;
-                        canvas.height = img.height * scaleSize;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                        
+                        const canvas = document.createElement('canvas'); let MAX_WIDTH = 600; let scaleSize = MAX_WIDTH / img.width; if(scaleSize > 1) scaleSize = 1; 
+                        canvas.width = img.width * scaleSize; canvas.height = img.height * scaleSize;
+                        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6); 
-                        document.getElementById('expensePhotoBase64').value = compressedBase64;
-                        document.getElementById('expensePhotoPreview').src = compressedBase64;
-                        document.getElementById('expensePhotoPreview').style.display = 'inline-block';
+                        document.getElementById('expensePhotoBase64').value = compressedBase64; document.getElementById('expensePhotoPreview').src = compressedBase64; document.getElementById('expensePhotoPreview').style.display = 'inline-block';
                     };
                 };
             }
         }
 
         function addExpense() {
-            if (isInitialLoad) {
-                showToast("⏳ TUNGGU! Sistem sedang menarik data dari Cloud...", "warning");
-                return;
-            }
-
-            let id = document.getElementById('expenseId').value;
-            let payment = document.getElementById('expensePayment').value;
-            let category = document.getElementById('expenseCategory').value;
-            let name = document.getElementById('expenseName').value; 
-            let amount = document.getElementById('expenseAmount').value;
-            let photo = document.getElementById('expensePhotoBase64').value; 
+            if (isInitialLoad) { showToast("⏳ TUNGGU! Sistem sedang menarik data dari Cloud...", "warning"); return; }
+            let id = document.getElementById('expenseId').value; let payment = document.getElementById('expensePayment').value; let category = document.getElementById('expenseCategory').value;
+            let name = document.getElementById('expenseName').value; let amount = document.getElementById('expenseAmount').value; let photo = document.getElementById('expensePhotoBase64').value; 
             
             if(!payment || !category || !name || !amount) { showToast("Lengkapi form pengeluaran!", "error"); return; }
-            
             let inputDate = getSelectedDate(); 
 
             if(id) {
                 let idx = expenses.findIndex(x => x.id == id);
-                if(idx !== -1) {
-                    expenses[idx].payment = payment;
-                    expenses[idx].category = category;
-                    expenses[idx].name = name;
-                    expenses[idx].amount = parseInt(amount);
-                    expenses[idx].date = inputDate;
-                    expenses[idx].updatedAt = Date.now();
-                    if (photo !== "") expenses[idx].photo = photo; 
-                }
+                if(idx !== -1) { expenses[idx].payment = payment; expenses[idx].category = category; expenses[idx].name = name; expenses[idx].amount = parseInt(amount); expenses[idx].date = inputDate; expenses[idx].updatedAt = Date.now(); if (photo !== "") expenses[idx].photo = photo; }
                 showToast("Pengeluaran berhasil di-update!", "success");
             } else {
                 const createdAt = Date.now();
-                expenses.push({
-                    id: createdAt,
-                    payment: payment,
-                    category: category,
-                    name: name,
-                    amount: getSafeAmount(amount),
-                    date: inputDate,
-                    createdAt: createdAt,
-                    updatedAt: createdAt,
-                    photo: photo
-                });
+                expenses.push({ id: createdAt, payment: payment, category: category, name: name, amount: getSafeAmount(amount), date: inputDate, createdAt: createdAt, updatedAt: createdAt, photo: photo });
                 showToast("Pengeluaran baru dicatat!", "success");
             }
-            
-            syncToCloud('expenses', expenses);
-            cancelEditExpense();            if (isPageActive('expenses')) renderExpenses(); 
-            if (isPageActive('revenue')) renderRevenue(); 
+            syncToCloud('expenses', expenses); cancelEditExpense(); if (isPageActive('expenses')) renderExpenses(); if (isPageActive('revenue')) renderRevenue(); 
         }
 
         function editExpense(id) {
             let e = expenses.find(x => x.id == id);
             if(e) {
-                document.getElementById('expenseId').value = e.id;
-                document.getElementById('expensePayment').value = e.payment || "";
-                document.getElementById('expenseCategory').value = e.category || "";
-                document.getElementById('expenseName').value = e.name;
-                document.getElementById('expenseAmount').value = e.amount;
-                
-                if (e.photo && e.photo !== "" && e.photo !== "TERSIMPAN_DI_CLOUD") {
-                    document.getElementById('expensePhotoBase64').value = e.photo;
-                    document.getElementById('expensePhotoPreview').src = e.photo;
-                    document.getElementById('expensePhotoPreview').style.display = 'inline-block';
-                } else {
-                    document.getElementById('expensePhotoBase64').value = "";
-                    document.getElementById('expensePhotoPreview').style.display = 'none';
-                }
-
-                document.getElementById('btnSaveExpense').innerText = "UPDATE PENGELUARAN";
-                document.getElementById('btnCancelExpense').style.display = "block";
-                showToast("Memuat mode edit...", "info");
+                document.getElementById('expenseId').value = e.id; document.getElementById('expensePayment').value = e.payment || ""; document.getElementById('expenseCategory').value = e.category || "";
+                document.getElementById('expenseName').value = e.name; document.getElementById('expenseAmount').value = e.amount;
+                if (e.photo && e.photo !== "" && e.photo !== "TERSIMPAN_DI_CLOUD") { document.getElementById('expensePhotoBase64').value = e.photo; document.getElementById('expensePhotoPreview').src = e.photo; document.getElementById('expensePhotoPreview').style.display = 'inline-block'; } 
+                else { document.getElementById('expensePhotoBase64').value = ""; document.getElementById('expensePhotoPreview').style.display = 'none'; }
+                document.getElementById('btnSaveExpense').innerText = "UPDATE PENGELUARAN"; document.getElementById('btnCancelExpense').style.display = "block"; showToast("Memuat mode edit...", "info");
             }
         }
 
         function cancelEditExpense() {
-            document.getElementById('expenseId').value = "";
-            document.getElementById('expensePayment').value = "";
-            document.getElementById('expenseCategory').value = "";
-            document.getElementById('expenseName').value = ""; 
-            document.getElementById('expenseAmount').value = ""; 
-            
-            document.getElementById('expensePhoto').value = "";
-            document.getElementById('expensePhotoBase64').value = "";
-            document.getElementById('expensePhotoPreview').style.display = 'none';
-            document.getElementById('expensePhotoPreview').src = "";
-
-            document.getElementById('btnSaveExpense').innerText = "SIMPAN PENGELUARAN";
-            document.getElementById('btnCancelExpense').style.display = "none";
+            document.getElementById('expenseId').value = ""; document.getElementById('expensePayment').value = ""; document.getElementById('expenseCategory').value = ""; document.getElementById('expenseName').value = ""; document.getElementById('expenseAmount').value = ""; 
+            document.getElementById('expensePhoto').value = ""; document.getElementById('expensePhotoBase64').value = ""; document.getElementById('expensePhotoPreview').style.display = 'none'; document.getElementById('expensePhotoPreview').src = "";
+            document.getElementById('btnSaveExpense').innerText = "SIMPAN PENGELUARAN"; document.getElementById('btnCancelExpense').style.display = "none";
         }
         
         async function deleteExpense(id) { 
             if (!confirm("Hapus catatan ini?")) return;
-            try {
-                await deleteRecordFromCloud('expenses', id);
-                if (isPageActive('expenses')) renderExpenses(); 
-                if (isPageActive('revenue')) renderRevenue(); 
-                showToast("Dihapus", "success"); 
-            } catch (err) {
-                console.error("Delete expense error:", err);
-                showToast("Gagal menghapus pengeluaran dari Cloud!", "error");
-            }
+            try { await deleteRecordFromCloud('expenses', id); if (isPageActive('expenses')) renderExpenses(); if (isPageActive('revenue')) renderRevenue(); showToast("Dihapus", "success"); } 
+            catch (err) { showToast("Gagal menghapus pengeluaran dari Cloud!", "error"); }
         }
         
         function renderExpenses() {
-            let tbody = document.getElementById('expenseTableBody'); let total = 0;
-            let targetDate = getSelectedDate(); let trHtml = '';
-            
+            let tbody = document.getElementById('expenseTableBody'); let total = 0; let targetDate = getSelectedDate(); let trHtml = '';
             if(!expenses || expenses.length===0) { trHtml = `<tr><td colspan="4" style="text-align:center;">Kosong.</td></tr>`; } 
             else { 
                 let targetExpenses = expenses.filter(e => getExpenseDate(e) === targetDate); 
@@ -1861,76 +1126,39 @@ let settings = readLocalJSON('settings', defaultSettings);
                     targetExpenses.forEach(e => { 
                         total += e.amount; let paymentInfo = e.payment || "-"; let catInfo = e.category || "-";
                         let notaBadge = (e.photo && e.photo !== "" && e.photo !== "TERSIMPAN_DI_CLOUD") ? `<br><span style="font-size:9px; background:var(--info); color:white; padding:2px 5px; border-radius:4px; display:inline-block; margin-top:4px;">🖼️ Ada Nota</span>` : '';
-
-                        trHtml += `<tr>
-                            <td style="font-size:10px;">${catInfo}<br><strong style="color:var(--info);">${paymentInfo}</strong></td>
-                            <td style="font-weight:700;">${e.name} ${notaBadge}</td>
-                            <td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td>
-                            <td>
-                                <button class="btn btn-outline" style="padding:4px 8px; font-size:11px; margin-bottom:4px; border-color:var(--info); color:var(--info);" onclick="editExpense(${e.id})">Edit</button>
-                                <button class="btn btn-outline" style="padding:4px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button>
-                            </td>
-                            </tr>`; 
+                        trHtml += `<tr><td style="font-size:10px;">${catInfo}<br><strong style="color:var(--info);">${paymentInfo}</strong></td><td style="font-weight:700;">${e.name} ${notaBadge}</td><td style="font-weight:700; color:var(--danger);">${formatRp(e.amount)}</td><td><button class="btn btn-outline" style="padding:4px 8px; font-size:11px; margin-bottom:4px; border-color:var(--info); color:var(--info);" onclick="editExpense(${e.id})">Edit</button><button class="btn btn-outline" style="padding:4px 8px; font-size:11px; border-color:var(--danger); color:var(--danger);" onclick="deleteExpense(${e.id})">Hapus</button></td></tr>`; 
                     });
                 }
             }
-            tbody.innerHTML = trHtml;
-            document.getElementById('expenseTotal').innerText = formatRp(total);
+            tbody.innerHTML = trHtml; document.getElementById('expenseTotal').innerText = formatRp(total);
         }
 
         function renderRevenue() {
             const report = calculateDailyReport(getSelectedDate());
-
             if(document.getElementById('revShift1Cash')) document.getElementById('revShift1Cash').innerText = formatRp(report.shift1Cash);
             if(document.getElementById('revShift1Qris')) document.getElementById('revShift1Qris').innerText = formatRp(report.shift1Qris);
             if(document.getElementById('revShift1Total')) document.getElementById('revShift1Total').innerText = formatRp(report.shift1Cash + report.shift1Qris);
-
             if(document.getElementById('revShift2Cash')) document.getElementById('revShift2Cash').innerText = formatRp(report.shift2Cash);
             if(document.getElementById('revShift2Qris')) document.getElementById('revShift2Qris').innerText = formatRp(report.shift2Qris);
             if(document.getElementById('revShift2Total')) document.getElementById('revShift2Total').innerText = formatRp(report.shift2Cash + report.shift2Qris);
-
             if(document.getElementById('revShopee')) document.getElementById('revShopee').innerText = formatRp(report.shopee);
             if(document.getElementById('revGo')) document.getElementById('revGo').innerText = formatRp(report.gofood);
             if(document.getElementById('revGrab')) document.getElementById('revGrab').innerText = formatRp(report.grab);
             if(document.getElementById('revOjolTotal')) document.getElementById('revOjolTotal').innerText = formatRp(report.ojol);
-
             if(document.getElementById('finalOmzetCash')) document.getElementById('finalOmzetCash').innerText = formatRp(report.cash);
             if(document.getElementById('finalOmzetQris')) document.getElementById('finalOmzetQris').innerText = formatRp(report.qris);
             if(document.getElementById('finalOmzetOjol')) document.getElementById('finalOmzetOjol').innerText = formatRp(report.ojol);
             if(document.getElementById('finalOmzetTotal')) document.getElementById('finalOmzetTotal').innerText = formatRp(report.total);
             if(document.getElementById('finalUangFisik')) document.getElementById('finalUangFisik').innerText = formatRp(report.physicalCash);
-
             if(document.getElementById('pettyCashStatus')) document.getElementById('pettyCashStatus').innerText = "Petty Cash: " + formatRp(pettyCash);
             if(document.getElementById('inputPettyCash') && document.getElementById('inputPettyCash').value === "") document.getElementById('inputPettyCash').value = pettyCash;
         }
+
         function getReportString() {
             const report = calculateDailyReport(getSelectedDate());
-
-            let text = `*OMZET TGL ${report.date}*
-
-CASH: ${formatRpText(report.cash)}
-QRIS: ${formatRpText(report.qris)}
-OJOL: ${formatRpText(report.ojol)}
-TOTAL: ${formatRpText(report.total)}
-__________________________
-CASH: ${formatRpText(report.cash)}
-PETTY CASH: ${formatRpText(pettyCash)}
-TOTAL CASH: ${formatRpText(report.totalCashWithPetty)}
-__________________________
-*PENGELUARAN*
-
-`;
-
-            if(report.expenseItems.length === 0) text += `(Tidak ada)\n`;
-            else report.expenseItems.forEach(e => {
-                text += `# ${e.name} : ${formatRpText(getSafeAmount(e.amount))}\n`;
-            });
-
-            text += `TOTAL KELUAR: ${formatRpText(report.expenses)}
-_________________________
-SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
-
-*(${formatRpText(report.physicalCash)})*`;
+            let text = `*OMZET TGL ${report.date}*\n\nCASH: ${formatRpText(report.cash)}\nQRIS: ${formatRpText(report.qris)}\nOJOL: ${formatRpText(report.ojol)}\nTOTAL: ${formatRpText(report.total)}\n__________________________\nCASH: ${formatRpText(report.cash)}\nPETTY CASH: ${formatRpText(pettyCash)}\nTOTAL CASH: ${formatRpText(report.totalCashWithPetty)}\n__________________________\n*PENGELUARAN*\n\n`;
+            if(report.expenseItems.length === 0) text += `(Tidak ada)\n`; else report.expenseItems.forEach(e => { text += `# ${e.name} : ${formatRpText(getSafeAmount(e.amount))}\n`; });
+            text += `TOTAL KELUAR: ${formatRpText(report.expenses)}\n_________________________\nSISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}\n\n*(${formatRpText(report.physicalCash)})*`;
             return text;
         }
         function generateReport() { navigator.clipboard.writeText(getReportString()).then(() => showToast("Laporan dicopy", "success")).catch(e => showToast("Gagal copy", "error")); }
@@ -1938,37 +1166,21 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         function generateRealExcelBlob() {
             const targetDate = getSelectedDate(); let wb = XLSX.utils.book_new();
             let orderData = [ ["LAPORAN TRANSAKSI TANGGAL", targetDate], [], ["ID", "Waktu", "Pemesan", "Menu Pesanan", "Shift", "Metode", "Total"] ];
-            if(orders && Array.isArray(orders)) {
-                getReportOrders(targetDate).forEach(o => {
-                    let itemsStr = o.items ? o.items.map(i => `${i.name} (x${i.qty})`).join(', ') : "-"; orderData.push([o.id, o.time, o.customer, itemsStr, o.shift, o.payment, o.total]); 
-                });
-            }
+            if(orders && Array.isArray(orders)) { getReportOrders(targetDate).forEach(o => { let itemsStr = o.items ? o.items.map(i => `${i.name} (x${i.qty})`).join(', ') : "-"; orderData.push([o.id, o.time, o.customer, itemsStr, o.shift, o.payment, o.total]); }); }
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orderData), "Transaksi");
-
             let expenseData = [ ["LAPORAN PENGELUARAN TANGGAL", targetDate], [], ["Kategori", "Pembayaran", "Nama Pengeluaran", "Nominal"] ];
-            if(expenses && Array.isArray(expenses)) {
-                getReportExpenses(targetDate).forEach(e => { expenseData.push([e.category||"-", e.payment||"-", e.name, getSafeAmount(e.amount)]); });
-            }
+            if(expenses && Array.isArray(expenses)) { getReportExpenses(targetDate).forEach(e => { expenseData.push([e.category||"-", e.payment||"-", e.name, getSafeAmount(e.amount)]); }); }
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expenseData), "Pengeluaran");
-
-            let wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-            return new Blob([wbout], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+            let wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'}); return new Blob([wbout], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
         }
 
-        function downloadExcel() {
-            let targetDate = getSelectedDate(); let blob = generateRealExcelBlob(); let link = document.createElement('a'); 
-            link.href = URL.createObjectURL(blob); link.download = `Omzet_${targetDate.replace(/\//g, '-')}.xlsx`; 
-            document.body.appendChild(link); link.click(); document.body.removeChild(link); 
-        }
+        function downloadExcel() { let targetDate = getSelectedDate(); let blob = generateRealExcelBlob(); let link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `Omzet_${targetDate.replace(/\//g, '-')}.xlsx`; document.body.appendChild(link); link.click(); document.body.removeChild(link); }
 
         async function shareExcelToWA() { 
             const targetDate = getSelectedDate(); const dateStr = targetDate.replace(/\//g, '-'); const textReport = getReportString();
             const file = new File([generateRealExcelBlob()], `Omzet_${dateStr}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            if (navigator.canShare && navigator.canShare({ files: [file] })) {
-                try { await navigator.share({ files: [file], title: `Laporan Omzet ${dateStr}`, text: textReport }); showToast("Membuka menu Share...", "info"); return; } catch (error) { }
-            } else { showToast("Sistem ini butuh bantuan manual.", "warning"); }
-            downloadExcel();
-            setTimeout(() => { try { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(textReport)}`, '_blank'); } catch (e) { showToast("Gagal buka WA.", "error"); } }, 1500); 
+            if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: `Laporan Omzet ${dateStr}`, text: textReport }); showToast("Membuka menu Share...", "info"); return; } catch (error) { } } else { showToast("Sistem ini butuh bantuan manual.", "warning"); }
+            downloadExcel(); setTimeout(() => { try { window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(textReport)}`, '_blank'); } catch (e) { showToast("Gagal buka WA.", "error"); } }, 1500); 
         }
 
         function previewLogo(input) { if (input.files && input.files[0]) { let reader = new FileReader(); reader.onload = function(e) { settings.logoBase64 = e.target.result; document.getElementById('logoPreview').src = e.target.result; document.getElementById('logoPreview').style.display = 'inline-block'; syncToCloud('settings', settings); showToast("Logo diperbarui", "success"); }; reader.readAsDataURL(input.files[0]); } }
@@ -2060,37 +1272,6 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 showToast("Sinkronisasi Selesai!", "success");
             } catch (err) { showToast("Gagal terhubung ke Sheets", "error"); }
         }
-        
-            let tc = 0, tq = 0, to = 0;
-            getReportOrders(targetDate).forEach(o => {
-                const amount = getSafeAmount(o.total);
-                if (o.payment === 'Cash') tc += amount;
-                else if (['Shopeefood', 'Gofood', 'Grabfood'].includes(o.payment)) to += amount;
-                else if (o.payment === 'QRIS') tq += amount;
-            });
-            try {
-                await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: "omzet_harian", date: targetDate, cash: tc, qris: tq, ojol: to }) });
-                let targetExpenses = getReportExpenses(targetDate);
-                
-                for (let e of targetExpenses) { 
-                    await fetch(url, { 
-                        method: 'POST', 
-                        mode: 'no-cors', 
-                        headers: { 'Content-Type': 'application/json' }, 
-                        body: JSON.stringify({ 
-                            type: "pengeluaran", 
-                            date: targetDate, 
-                            payment: e.payment, 
-                            category: e.category, 
-                            name: e.name, 
-                            amount: e.amount,
-                            photo: e.photo || "" 
-                        }) 
-                    }); 
-                }
-                showToast("Sinkronisasi Selesai!", "success");
-            } catch (err) { showToast("Gagal terhubung ke Sheets", "error"); }
-        }
 
         let printerWriteQueue = Promise.resolve();
         let printerJobQueue = Promise.resolve();
@@ -2120,8 +1301,6 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
             }
         }
         function encodePrinterText(text) {
-            // OKAY 58D menggunakan karakter single-byte ESC/POS.
-            // Semua teks struk dinormalisasi ke ASCII agar tidak muncul karakter acak.
             return new Uint8Array(Array.from(String(text ?? '')
                 .replace(/[–—]/g, '-')
                 .replace(/[“”]/g, '"')
@@ -2161,21 +1340,14 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                         const pixels = ctx.getImageData(0, 0, width, height).data;
                         const out = [];
 
-                        // OKAY 58D: gunakan ESC * bit-image, bukan GS v 0.
-                        // ESC * m=0 mengirim 8 titik vertikal untuk setiap kolom.
                         for (let y = 0; y < height; y += 8) {
                             const bytesWide = Math.ceil(width / 8);
-
-                            // ESC * m=0 nL nH
                             out.push(0x1B, 0x2A, 0x00, bytesWide & 0xFF, (bytesWide >> 8) & 0xFF);
 
                             for (let xByte = 0; xByte < bytesWide; xByte++) {
                                 for (let bit = 0; bit < 8; bit++) {
                                     let value = 0;
                                     const x = xByte * 8 + bit;
-
-                                    // This bit-image format expects one byte per horizontal
-                                    // column containing 8 vertical pixels.
                                     for (let row = 0; row < 8; row++) {
                                         const py = y + row;
                                         if (x >= width || py >= height) continue;
@@ -2190,12 +1362,9 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                                             value |= (1 << (7 - row));
                                         }
                                     }
-
                                     out.push(value);
                                 }
                             }
-
-                            // Finish this 8-dot band before the next one.
                             out.push(0x0A);
                         }
 
@@ -2211,7 +1380,8 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         }
 
         const PRINTER_BLE_PROFILES = [
-            {                service: '000018f0-0000-1000-8000-00805f9b34fb',
+            {
+                service: '000018f0-0000-1000-8000-00805f9b34fb',
                 characteristic: '00002af1-0000-1000-8000-00805f9b34fb'
             },
             {
@@ -2225,8 +1395,6 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         ];
 
         async function findPrinterWriteCharacteristic(server) {
-            // Utamakan profil printer thermal umum, lalu cari characteristic yang
-            // benar-benar memiliki properti write/writeWithoutResponse.
             for (const profile of PRINTER_BLE_PROFILES) {
                 try {
                     const service = await server.getPrimaryService(profile.service);
@@ -2262,7 +1430,6 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
         }
         function testPrint() { executePrint({ id: "TEST", time: getTimestamp(), customer: "TEST", subtotal: 10000, discount: 0, total: 10000, shift: settings.activeShift, payment: "TEST", items: [{name: "Item Test", qty: 1, price: 10000}] }); showToast("Test print dikirim", "info"); }
 
-        // RENDER KATEGORI MENU HANYA SEKALI
         function renderCategories() {
             const catContainer = document.getElementById('categoryFilters'); 
             let catHtml = `<button class="tab-btn ${currentPosFilter==='Semua'?'active':''}" onclick="selectCategory('Semua', this)">Semua</button>`;
@@ -2357,7 +1524,6 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 if (isPageActive('revenue')) renderRevenue();
                 if (isPageActive('history')) filterHistory(window.currentHistoryFilter);
             } catch (err) {
-                console.error("Delete order error:", err);
                 showToast("Gagal menghapus pesanan dari Cloud!", "error");
             }
         }
@@ -2458,9 +1624,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                     if(status === 'selesai' || document.getElementById('btAutoPrint').checked) {
                         executePrint(orderToPrint).catch(e => console.error("Print Error Bypass:", e)); 
                     }
-                } catch (err) {
-                    console.error("Printer Crash Bypass:", err);
-                }
+                } catch (err) { }
             }
         }
 
@@ -2471,31 +1635,18 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 let cName = order.shift === "1" ? settings.shift1Name : settings.shift2Name;
                 let success = false;
 
-                // v1.2.2: transaksi Bluetooth dibuat TEXT-ONLY terlebih dahulu.
-                // Semua command ESC/POS dikirim sebagai byte terpisah dari teks.
-                // Logo bitmap sengaja tidak dikirim pada jalur transaksi sampai jalur teks
-                // benar-benar bersih; payload bitmap sebelumnya terbukti menghasilkan
-                // karakter acak pada OKAY 58D.
                 if (printerKasirCharacteristic) {
                     try {
                         const writeCmd = async (bytes, chunk = 32, delay = 15) => {
-                            await writeBluetoothData(
-                                printerKasirCharacteristic,
-                                new Uint8Array(bytes),
-                                { chunk, delay }
-                            );
+                            await writeBluetoothData(printerKasirCharacteristic, new Uint8Array(bytes), { chunk, delay });
                         };
 
                         const writeText = async (text) => {
-                            await writeBluetoothData(
-                                printerKasirCharacteristic,
-                                encodePrinterText(text),
-                                { chunk: 48, delay: 15 }
-                            );
+                            await writeBluetoothData(printerKasirCharacteristic, encodePrinterText(text), { chunk: 48, delay: 15 });
                         };
 
-                        await writeCmd([0x1B, 0x40]);       // ESC @
-                        await writeCmd([0x1B, 0x61, 0x01]); // center
+                        await writeCmd([0x1B, 0x40]);
+                        await writeCmd([0x1B, 0x61, 0x01]);
 
                         await writeText(
                             String(settings.storeName || '') + "\n" +
@@ -2506,7 +1657,7 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             "--------------------------------\n"
                         );
 
-                        await writeCmd([0x1B, 0x61, 0x00]); // left
+                        await writeCmd([0x1B, 0x61, 0x00]);
 
                         for (const i of (order.items || [])) {
                             const st = i.assignedTo ? " [" + String(i.assignedTo) + "]" : "";
@@ -2531,13 +1682,12 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                             "--------------------------------\n"
                         );
 
-                        await writeCmd([0x1B, 0x61, 0x01]); // center
+                        await writeCmd([0x1B, 0x61, 0x01]);
                         await writeText(String(settings.footer || '') + "\n\n\n\n");
 
                         await waitMs(300);
                         success = true;
                     } catch (e) {
-                        console.error("[Printer Kasir]", e);
                         try { printerKasirCharacteristic = null; } catch (_) {}
                     }
                 }
@@ -2545,19 +1695,11 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                 if (printerDapurCharacteristic) {
                     try {
                         const writeCmdDapur = async (bytes, chunk = 32, delay = 15) => {
-                            await writeBluetoothData(
-                                printerDapurCharacteristic,
-                                new Uint8Array(bytes),
-                                { chunk, delay }
-                            );
+                            await writeBluetoothData(printerDapurCharacteristic, new Uint8Array(bytes), { chunk, delay });
                         };
 
                         const writeTextDapur = async (text) => {
-                            await writeBluetoothData(
-                                printerDapurCharacteristic,
-                                encodePrinterText(text),
-                                { chunk: 48, delay: 15 }
-                            );
+                            await writeBluetoothData(printerDapurCharacteristic, encodePrinterText(text), { chunk: 48, delay: 15 });
                         };
 
                         await writeCmdDapur([0x1B, 0x40]);
@@ -2584,7 +1726,6 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
                         await waitMs(200);
                         success = true;
                     } catch (e) {
-                        console.error("[Printer Dapur]", e);
                         try { printerDapurCharacteristic = null; } catch (_) {}
                     }
                 }
@@ -2631,23 +1772,13 @@ SISA CASH (FISIK LACI): ${formatRpText(report.physicalCash)}
 
         window.onload = function() { 
             setTodayDate(); 
-            
             renderStaffList(); loadStoreSettings(); loadAdminPins(); loadStaffSettings(); 
             updateSidebarCashier(); 
-            
             renderCategories();
             renderPOS(currentPosFilter);
-            
             fetchPosDataFromFirebase(); fetchProductsFromFirebase(); checkAutoShift(); 
-            
-            // Bersihkan SW/cache lama yang mungkin berasal dari deployment sebelumnya.
-            // Tidak ada reload otomatis sehingga tidak terjadi update loop.
             cleanupLegacyPwaStorageInBackground();
-
-            // Jika halaman sudah berhasil boot setelah hard update, hapus marker reload.
             sessionStorage.removeItem(UPDATE_RELOAD_FLAG);
-
-            // CEK UPDATE APP (VERSION CONTROLLER)
             checkAppVersion();
         };
     </script>
